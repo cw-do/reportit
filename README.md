@@ -1,56 +1,97 @@
 # reportit
 
-Automated **post-experiment report generator** for EQSANS (Extended Q-range
-Small-Angle Neutron Scattering) experiments at the SNS, Oak Ridge National
-Laboratory.
+**LLM-driven post-experiment report generator for EQSANS** (Extended Q-range
+Small-Angle Neutron Scattering) at the SNS, Oak Ridge National Laboratory.
 
-## Goal
+Point it at an experiment's IPTS folder and it reads the proposal, figures out
+what the experiment was about, inventories the reduced data, and writes a
+generic-format LaTeX report (compiled to PDF) summarizing the science, showing
+plots, and assessing whether the proposal's hypotheses are borne out by the data.
 
-Given an experiment's IPTS folder (`/SNS/EQSANS/IPTS-{num}/shared/`), `reportit`
-produces a LaTeX/PDF experimental report that serves both as a **summary** of the
-science and as a **record** of what data was collected and how it was reduced.
+```bash
+reportit 38533                 # -> ./reportit_out/IPTS-38533/report_*.pdf
+reportit /SNS/EQSANS/IPTS-38533/shared -o /tmp/rep
+```
 
-The intended pipeline:
+## What makes it different: the LLM drives the analysis
 
-1. **Read the proposal** — ingest one or more PDFs under `shared/proposal/`
-   (beamtime proposal plus relevant prior work / literature) and use an LLM to
-   understand what data the experiment expects to produce and what trends were
-   hypothesized.
-2. **Inventory the data** — walk `shared/` and its subfolders to find reduction
-   scripts and reduced output (`*_Iq.dat` 1D, `*_Iqxqy.dat` 2D), noting which
-   folder holds which data.
-3. **Identify runs** — use ONCat (see the `eqsanstools` / `eqsanstools-cli`
-   projects for working code) to map run numbers to data types based on run
-   titles.
-4. **Reason** — use an LLM to best-guess what each dataset represents by
-   combining proposal context with run titles (which often contain
-   abbreviations), and form a strategy for which data to group/compare and
-   whether 1D or 2D comparison is meaningful.
-5. **Plot** — generate figures (1D `Iq.dat` as log-log, with accurate, relevant
-   Q-range labels; 2D where appropriate), writing fit functions via LLM as
-   needed.
-6. **Write the report** — assemble observations (including whether hypothesized
-   trends appear) into a LaTeX document and compile it to PDF.
+`reportit` does **not** hardcode the folder layout or analysis recipe. It hands an
+organized inventory of the shared folder to an LLM, which then **iteratively
+probes** the data with read-only tools — reading `NOTE.md`, listing datasets,
+parsing reduction JSONs, looking up ONCat run titles, even sampling curve shapes
+— until it understands the experiment. It then emits a structured
+`AnalysisStrategy` deciding, per experiment:
 
-When sample information is insufficient, the tool degrades gracefully: at minimum
-it summarizes what ONCat and the available data show, plotting by run title.
+- which reduced-output directory/variant is canonical (e.g. `output/` vs
+  `output_mask4/`), and why;
+- how to group datasets (temperature series, concentration series, config sets);
+- whether 1D `I(Q)` overlays or 2D `I(Qx,Qy)` maps are the meaningful comparison;
+- whether a quantitative model fit (Guinier `Rg`/`I0`, Porod/power-law slope) is
+  scientifically sensible for each group.
+
+The tool then executes that strategy, generates figures and fits, writes
+narrative + a hypothesis assessment, and produces **two PDFs**: a
+`report_comprehensive.pdf` and a condensed `report_summary.pdf`.
+
+## Pipeline
+
+```
+inventory ─▶ proposal (pypdf + LLM) ─▶ STRATEGY (agentic LLM + probes)
+          ─▶ execute (load, metrics, fits, plots) ─▶ narrative (LLM)
+          ─▶ assemble LaTeX ─▶ pdflatex ×2 ─▶ report_{comprehensive,summary}.pdf
+```
+
+Key modules (`src/reportit/`): `discovery/` (folder inventory, name parsing,
+reduction-JSON), `integrations/oncat.py` (run catalog via pyoncat),
+`proposal/` (PDF text + LLM summary), `llm/` (OpenRouter client with
+caching, JSON, and the tool-calling loop; probe tool specs), `strategy/`
+(the agentic engine + read-only probes), `analysis/` (native numpy loaders,
+metrics, scipy fits — **no drtsans dependency**), `plotting/figures.py`,
+`execute/runner.py`, `narrative/synthesize.py`, `report/` (jinja2 templates +
+pdflatex). Every ONCat / LLM / probe result is cached under
+`<out>/.reportit_cache/`, so reruns are fast and deterministic.
+
+## Install
+
+```bash
+python3.11 -m venv .venv
+. .venv/bin/activate
+pip install -e .            # uses the ORNL repoman index for pyoncat
+```
+
+Requires a system `pdflatex` (e.g. TeX Live) to produce PDFs; without it the tool
+still writes the `.tex` files.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY` (OpenRouter is used
-for the LLM reasoning steps). The `.env` file is gitignored — never commit it.
+Copy `.env.example` to `.env` and set the OpenRouter key (used for all LLM steps):
+
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_MODEL=google/gemini-3.5-flash
+```
+
+The `.env` is gitignored — never commit it.
+
+## CLI options
+
+| Flag | Effect |
+|------|--------|
+| `-o, --out DIR` | output directory (default `./reportit_out/IPTS-<n>`) |
+| `--strategy-only` | print the LLM-derived `AnalysisStrategy` JSON and stop |
+| `--no-llm` | deterministic mode: heuristic grouping, no LLM reasoning |
+| `--no-proposal` | ignore the proposal PDF(s) |
+| `--refresh` | bust caches (re-query ONCat / re-run LLM) |
+| `--max-llm-steps N` | cap on agentic strategy tool-calling steps (default 40) |
+| `-v, --verbose` | verbose logging (shows each strategy probe) |
+
+## Graceful degradation
+
+A thin/image-only proposal, missing ONCat, or `--no-llm` never hard-fails: the
+report falls back to a data-driven summary (heuristic grouping, ONCat/ filename
+titles, templated observations) and records what was missing in a Caveats section.
 
 ## Related projects
 
-This repo lives alongside the EQSANS shared scripts. Reusable ONCat / reduction
-logic to draw from:
-
-- `../eqsanstools` — core reduction tooling (`eqsans_drtsans_script.py`,
-  catalog/ONCat utilities) built on the `drtsans` package.
-- `../eqsanstools-cli` — interactive Textual TUI/CLI for EQSANS reduction
-  (catalog loading, run matching, reduction, plotting, stitching).
-
-## Status
-
-Early scaffolding. The detailed implementation plan is being prepared
-separately.
+Reuses patterns from the EQSANS shared scripts: `../eqsanstools-cli`
+(ONCat + LLM + plotting) and `../eqsanstools` (reduction + `eqplot`).
