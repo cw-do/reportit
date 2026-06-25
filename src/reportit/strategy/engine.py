@@ -42,6 +42,10 @@ Key decisions you must ground in evidence, not assumptions:
   - If there are multiple output directories (e.g. output vs output_mask4 with \
 different detector masks), decide which to use, or whether to compare them, and \
 WHY (read NOTE.md and compare).
+  - Decide curve_source: do combined/stitched 1D profiles exist (see the \
+inventory's combined-files list — names vary: merged_*, *_stitched, etc.)? If so, \
+prefer 'combined' (extended Q from joining configurations). If there are NONE, use \
+'individual' (per-configuration *_Iq.dat). Don't assume merged files exist — check.
   - Exclude calibration standards (e.g. porsil) from science groups.
   - Group datasets into meaningful comparisons: temperature series, concentration \
 series, config sets, etc. Order them sensibly.
@@ -115,9 +119,14 @@ def derive_strategy(
 
 
 def _parse_strategy(raw: dict, datasets: list[Dataset], inv: FolderInventory) -> AnalysisStrategy:
+    cs = (raw.get("curve_source") or "auto").lower()
+    if cs not in ("combined", "individual", "auto"):
+        cs = "auto"
     strat = AnalysisStrategy(
         experiment_summary=raw.get("experiment_summary", ""),
         science_goals=list(raw.get("science_goals") or []),
+        curve_source=cs,
+        curve_source_rationale=raw.get("curve_source_rationale", ""),
         report_outline=list(raw.get("report_outline") or []),
         caveats=list(raw.get("caveats") or []),
         open_questions=list(raw.get("open_questions") or []),

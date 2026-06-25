@@ -33,7 +33,8 @@ class FolderInventory:
     scripts: list[Path]
     note_files: list[Path]
     naming_examples: list[str]  # representative output names
-    total_files: int
+    combined_examples: list[str] = field(default_factory=list)  # merged/stitched 1D files
+    total_files: int = 0
 
     def as_text(self) -> str:
         def block(title: str, items: list) -> list[str]:
@@ -64,7 +65,12 @@ class FolderInventory:
             "",
             *block("Note/README files:", self.note_files),
             "",
-            *block("Representative reduced-output names:", self.naming_examples),
+            *block("Representative reduced-output names (per-config 1D *_Iq.dat):",
+                   self.naming_examples),
+            "",
+            *block("Combined/stitched 1D profiles (merged extended-Q; naming varies "
+                   "— may be 'merged', 'stitched', etc.; EMPTY means none exist):",
+                   self.combined_examples),
         ]
         return "\n".join(lines)
 
@@ -172,6 +178,10 @@ class AnalysisStrategy:
     experiment_summary: str = ""
     science_goals: list[str] = field(default_factory=list)
     variant_decision: VariantDecision = field(default_factory=VariantDecision)
+    # which 1D curves to plot: "combined" (merged/stitched extended-Q),
+    # "individual" (per-configuration), or "auto" (combined if available)
+    curve_source: str = "auto"
+    curve_source_rationale: str = ""
     groups: list[StrategyGroup] = field(default_factory=list)
     fit_plans: list[FitPlan] = field(default_factory=list)
     report_outline: list[str] = field(default_factory=list)

@@ -61,6 +61,8 @@ class Runner:
     def run(self, strategy: AnalysisStrategy) -> list[GroupReport]:
         variants = strategy.variant_decision.variants_used or ["output"]
         compare = strategy.variant_decision.compare and len(variants) > 1
+        # honor the LLM's curve_source decision (combined/individual/auto)
+        prefer_merged = strategy.curve_source != "individual"
         fit_by_group = {fp.group_id: fp for fp in strategy.fit_plans}
 
         reports: list[GroupReport] = []
@@ -96,7 +98,7 @@ class Runner:
                 fig_path = self.fig_dir / f"{_safe(g.group_id)}_iq.png"
                 made = figures.overlay_iq(
                     g.label, members, fig_path,
-                    compare_variants=compare, prefer_merged=True,
+                    compare_variants=compare, prefer_merged=prefer_merged,
                     fit=fit_result, fit_member_index=rep_idx,
                 )
                 if made:

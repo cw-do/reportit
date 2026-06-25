@@ -18,6 +18,42 @@ logger = logging.getLogger(__name__)
 
 _IQ1D_RE = re.compile(r"^(?P<name>.+)_Iq\.dat$", re.IGNORECASE)
 
+# Tokens that mark a file as a COMBINED/stitched 1D profile (names vary by IPTS).
+COMBINE_WORDS = {"merged", "merge", "stitch", "stitched", "stitching",
+                 "combined", "combine", "joined", "join", "spliced"}
+_CONFIG_TOKEN = re.compile(r"^\d+(?:\.\d+)?m\d+(?:\.\d+)?a(?:\d+hz)?$", re.IGNORECASE)
+_TEMP_TOKEN = re.compile(r"^-?\d+(?:\.\d+)?C$", re.IGNORECASE)
+
+
+def is_combined_name(filename: str) -> bool:
+    """True if a 1D text file name signals a combined/stitched profile."""
+    low = filename.lower()
+    if not (low.endswith(".txt") or low.endswith(".dat")):
+        return False
+    if "iqxqy" in low or "_trans" in low:
+        return False
+    tokens = re.split(r"[_\.\-]", low)
+    return any(w in COMBINE_WORDS for w in tokens)
+
+
+def parse_combined(filename: str) -> tuple[str | None, str | None]:
+    """Parse a combined-profile filename into (base, temperature), tolerant of
+    where the combine word sits (prefix/suffix) and of config/temp tokens.
+
+    merged_15_30C_4m10a_2.5m2.5a_Iq.txt -> ('15', '30C')
+    15_30C_stitched_4m10a_2.5m2.5a.txt  -> ('15', '30C')
+    """
+    stem = re.sub(r"\.\w+$", "", filename)
+    stem = re.sub(r"_?[Ii]q$", "", stem)
+    tokens = [t for t in stem.split("_") if t]
+    tokens = [t for t in tokens if t.lower() not in COMBINE_WORDS]
+    tokens = [t for t in tokens if not _CONFIG_TOKEN.match(t)]
+    temp = None
+    if tokens and _TEMP_TOKEN.match(tokens[-1]):
+        temp = tokens.pop()
+    base = "_".join(tokens) if tokens else None
+    return base, temp
+
 
 def scan_dir(output_dir: Path, variant: str | None = None) -> list[Dataset]:
     output_dir = Path(output_dir)
@@ -25,15 +61,14 @@ def scan_dir(output_dir: Path, variant: str | None = None) -> list[Dataset]:
     datasets: list[Dataset] = []
 
     files = {p.name: p for p in output_dir.iterdir() if p.is_file()}
-    merged = [p for n, p in files.items()
-              if n.lower().startswith("merged_") and n.lower().endswith(".txt")]
-    # index merged files by (base, temperature) — a merged file combines the
-    # configurations for one sample+condition, so both configs map to it.
+    # index combined/stitched files by (base, temperature) — a combined file
+    # joins the configurations for one sample+condition (naming varies by IPTS).
     merged_index: dict[tuple, Path] = {}
-    for p in merged:
-        b, t = _parse_merged(p.name)
-        if b is not None:
-            merged_index.setdefault((b, t), p)
+    for n, p in files.items():
+        if is_combined_name(n):
+            b, t = parse_combined(n)
+            if b is not None:
+                merged_index.setdefault((b, t), p)
 
     for name, path in sorted(files.items()):
         m = _IQ1D_RE.match(name)
@@ -68,24 +103,3 @@ def scan_dir(output_dir: Path, variant: str | None = None) -> list[Dataset]:
     return datasets
 
 
-_CONFIG_TOKEN = re.compile(r"^\d+(?:\.\d+)?m\d+(?:\.\d+)?a(?:\d+hz)?$", re.IGNORECASE)
-_TEMP_TOKEN = re.compile(r"^-?\d+(?:\.\d+)?C$", re.IGNORECASE)
-
-
-def _parse_merged(filename: str) -> tuple[str | None, str | None]:
-    """Parse 'merged_<base>[_<temp>]_<cfg>_<cfg>..._Iq.txt' -> (base, temp).
-
-    e.g. merged_15_30C_4m10a_2.5m2.5a_Iq.txt -> ('15', '30C')
-         merged_15_4m10a_2.5m2.5a_Iq.txt     -> ('15', None)
-    """
-    m = re.match(r"^merged_(?P<core>.+?)_Iq\.\w+$", filename, re.IGNORECASE)
-    if not m:
-        return None, None
-    tokens = m.group("core").split("_")
-    while tokens and _CONFIG_TOKEN.match(tokens[-1]):  # strip trailing config combo
-        tokens.pop()
-    temp = None
-    if tokens and _TEMP_TOKEN.match(tokens[-1]):
-        temp = tokens.pop()
-    base = "_".join(tokens) if tokens else None
-    return base, temp

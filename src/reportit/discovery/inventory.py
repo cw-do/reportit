@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from ..models import FileEntry, FolderInventory
+from . import scan
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,6 @@ _SKIP_DIRS = {".reportit_cache", "__pycache__", ".git", ".ipynb_checkpoints"}
 
 _IQ1D_RE = re.compile(r"_Iq\.dat$", re.IGNORECASE)
 _IQ2D_RE = re.compile(r"_Iqxqy\.(dat|h5)$", re.IGNORECASE)
-_MERGED_RE = re.compile(r"^merged_.*\.txt$", re.IGNORECASE)
 _NOTE_RE = re.compile(r"(note|readme).*", re.IGNORECASE)
 
 
@@ -34,8 +34,8 @@ def _classify(path: Path) -> str:
         return "proposal"  # any PDF in shared is a candidate proposal/literature
     if ext == ".py":
         return "script"
-    if _MERGED_RE.match(name):
-        return "merged"
+    if scan.is_combined_name(name):
+        return "combined"
     if _IQ1D_RE.search(name):
         return "iq1d"
     if _IQ2D_RE.search(name):
@@ -103,11 +103,15 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
     note_files = [e.path for e in entries if e.kind == "note"]
 
     # Candidate output dirs = directories that directly contain reduced 1D data.
-    output_dirs = sorted({e.path.parent for e in entries if e.kind in ("iq1d", "merged")})
+    output_dirs = sorted({e.path.parent for e in entries
+                          if e.kind in ("iq1d", "combined")})
 
     # Representative output names (from 1D files), capped.
     iq_names = sorted({_IQ1D_RE.sub("", e.path.name) for e in entries if e.kind == "iq1d"})
     naming_examples = iq_names[:40]
+
+    # Combined/stitched 1D profiles (naming varies — merged/stitched/etc.).
+    combined_examples = sorted({e.path.name for e in entries if e.kind == "combined"})[:20]
 
     tree_text = _build_tree_text(shared_dir)
 
@@ -122,6 +126,7 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
         scripts=scripts,
         note_files=note_files,
         naming_examples=naming_examples,
+        combined_examples=combined_examples,
         total_files=len(entries),
     )
 

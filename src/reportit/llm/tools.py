@@ -89,6 +89,18 @@ FINALIZE_STRATEGY = _fn(
             },
             "required": ["variants_used", "rationale"],
         },
+        "curve_source": {
+            "type": "string",
+            "enum": ["combined", "individual", "auto"],
+            "description": "Which 1D curves to plot. 'combined' = use the merged/"
+            "stitched extended-Q profiles (check the inventory's combined-files "
+            "list — they may be named merged_*, *_stitched, etc.); 'individual' = "
+            "use per-configuration *_Iq.dat curves (choose this if NO combined "
+            "files exist, or to show each configuration separately); 'auto' = "
+            "combined where available else individual. Decide from what actually "
+            "exists in the folder.",
+        },
+        "curve_source_rationale": {"type": "string"},
         "groups": {
             "type": "array",
             "description": "How to group datasets into comparison figures. Exclude calibration standards (porsil).",
