@@ -50,6 +50,7 @@ def run_report(
     no_proposal: bool = False,
     strategy_only: bool = False,
     refresh: bool = False,
+    sasfit: bool = False,
     max_llm_steps: Optional[int] = None,
 ) -> RunResult:
     out_dir = Path(out_dir)
@@ -119,6 +120,32 @@ def run_report(
     for gr in group_reports:
         gr.observations = synthesize.observe_group(gr, llm)
 
+    # 7b) agentic model-based fitting (sasmodels) — opt-in
+    sas_outcomes = []
+    if sasfit and llm is not None:
+        from .analysis import sas_agent
+        fig_dir = out_dir / "figures"
+        name_to_ds: dict[str, list] = {}
+        for d in datasets:
+            name_to_ds.setdefault(d.output_name, []).append(d)
+        variants = set(strategy.variant_decision.variants_used or [])
+        for g in strategy.groups:
+            members = []
+            for nm in g.members:
+                cands = [d for d in name_to_ds.get(nm, [])
+                         if not variants or d.variant in variants] or name_to_ds.get(nm, [])
+                if cands:
+                    members.append(cands[0])
+            if not members:
+                continue
+            logger.info("sasfit: fitting group %s ...", g.group_id)
+            try:
+                outcome = sas_agent.run_group_fit(
+                    g, members, llm, fig_dir, strategy.experiment_summary)
+                sas_outcomes.append(outcome)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("sasfit failed for %s: %s", g.group_id, e)
+
     # 8) global narrative + hypothesis checks
     overview, discussion, checks = synthesize.global_narrative(
         strategy, group_reports, proposal, llm)
@@ -138,6 +165,7 @@ def run_report(
         catalog_table=tables.build_sample_summary(datasets, strategy, proposal),
         appendix_tables=appendix,
         group_reports=group_reports,
+        sas_fits=sas_outcomes,
         hypothesis_checks=checks,
         discussion=discussion,
         caveats=_dedupe(caveats),

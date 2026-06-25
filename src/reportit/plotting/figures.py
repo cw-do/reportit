@@ -116,6 +116,57 @@ def _overlay_fit(ax, ds: Dataset, fit: FitResult, prefer_merged: bool) -> None:
         ax.plot(qq, a * qq ** p, "k--", linewidth=1.5, label=f"power law (p={p:.2f})")
 
 
+def plot_fit(result, out_path: Path, *, title: str = "") -> Path | None:
+    """Plot fitted sasmodels curve over the data (log-log) with a residual panel."""
+    q = np.asarray(result.q, float)
+    yd = np.asarray(result.i_data, float)
+    ym = np.asarray(result.i_model, float)
+    if q.size < 3 or ym.size != q.size:
+        return None
+    m = (q > 0) & (yd > 0) & np.isfinite(yd) & np.isfinite(ym)
+    if m.sum() < 3:
+        return None
+
+    fig, (ax, axr) = plt.subplots(
+        2, 1, figsize=(7, 6), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]})
+    # excluded (out-of-window) data, shown faintly for context
+    qe = np.asarray(getattr(result, "q_excluded", []), float)
+    ye = np.asarray(getattr(result, "i_excluded", []), float)
+    if qe.size and ye.size:
+        me = (qe > 0) & (ye > 0) & np.isfinite(qe) & np.isfinite(ye)
+        ax.plot(qe[me], ye[me], "x", ms=4, color="lightgray",
+                label="excluded (out of fit range)")
+    ax.errorbar(q[m], yd[m], fmt="o", ms=3, fillstyle="none",
+                color="tab:blue", label="data (fitted)")
+    ax.plot(q[m], ym[m], "-", lw=1.8, color="tab:red", label=f"{result.model_name} fit")
+    if getattr(result, "fit_qmin", None) and qe.size:
+        ax.axvline(result.fit_qmin, color="gray", ls=":", lw=0.8)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylabel(r"I(Q) (cm$^{-1}$)")
+    ax.legend(fontsize=8)
+    ttl = title or result.model_name
+    if result.reduced_chisq is not None:
+        ttl += f"   ($\\chi^2_\\nu$={result.reduced_chisq:.1f})"
+    ax.set_title(ttl)
+    ax.grid(True, which="major", alpha=0.2)
+
+    resid = (yd[m] - ym[m]) / np.where(yd[m] != 0, yd[m], 1)
+    axr.axhline(0, color="k", lw=0.8)
+    axr.plot(q[m], resid, "o", ms=3, color="tab:gray")
+    axr.set_xscale("log")
+    axr.set_ylabel("(data-fit)/data")
+    axr.set_xlabel(r"Q ($\mathrm{\AA}^{-1}$)")
+    axr.grid(True, which="major", alpha=0.2)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path
+
+
 def plot_2d(ds: Dataset, out_path: Path, *, markersize: int = 10) -> Path | None:
     if not ds.iqxqy_path or not Path(ds.iqxqy_path).is_file():
         return None

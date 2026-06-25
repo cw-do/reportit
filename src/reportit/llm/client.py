@@ -18,6 +18,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from ..cache import Cache
+from ..cache.store import md5
 from ..config import LLMSettings
 
 logger = logging.getLogger(__name__)
@@ -52,21 +53,32 @@ class LLMClient:
             out.append(self.settings.fallback_model)
         return out
 
+    def _models_with_fallback(self, model: Optional[str]) -> list[str]:
+        """Preferred model first (if given), then the default chain as fallback."""
+        if not model:
+            return self.models
+        out = [model]
+        for m in self.models:
+            if m not in out:
+                out.append(m)
+        return out
+
     # ------------------------------------------------------------------ #
     # plain chat
     # ------------------------------------------------------------------ #
     def chat(self, system: str, user: str, *, max_tokens: int = 4000,
-             cache_key: Optional[str] = None) -> str:
+             model: Optional[str] = None, cache_key: Optional[str] = None) -> str:
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": user}]
-        key = cache_key or ("chat:" + json.dumps(messages, sort_keys=True))
+        key = cache_key or ("chat:" + (model or "") + json.dumps(messages, sort_keys=True))
         if self.cache:
             hit = self.cache.get(key)
             if hit is not None:
                 return hit.get("text", "")
 
+        models = self._models_with_fallback(model)
         last_err = None
-        for model in self.models:
+        for model in models:
             try:
                 resp = self.client.chat.completions.create(
                     model=model, messages=messages, temperature=0, max_tokens=max_tokens,
@@ -84,32 +96,91 @@ class LLMClient:
     # structured JSON
     # ------------------------------------------------------------------ #
     def chat_json(self, system: str, user: str, *, max_tokens: int = 8000,
-                  cache_key: Optional[str] = None) -> dict:
+                  model: Optional[str] = None, cache_key: Optional[str] = None) -> dict:
         sys_p = system + "\n\nRespond with a single valid JSON object and nothing else."
         messages = [{"role": "system", "content": sys_p},
                     {"role": "user", "content": user}]
-        key = cache_key or ("json:" + json.dumps(messages, sort_keys=True))
+        key = cache_key or ("json:" + (model or "") + json.dumps(messages, sort_keys=True))
         if self.cache:
             hit = self.cache.get(key)
             if hit is not None:
                 return hit
 
+        models = self._models_with_fallback(model)
         last_err = None
-        for model in self.models:
+        for mdl in models:
+            conv = list(messages)
+            for attempt in range(3):  # retry the SAME model on malformed JSON
+                use_fmt = attempt == 0  # drop response_format on retries (some models choke)
+                try:
+                    kwargs = dict(model=mdl, messages=conv, temperature=0,
+                                  max_tokens=max_tokens)
+                    if use_fmt:
+                        kwargs["response_format"] = {"type": "json_object"}
+                    resp = self.client.chat.completions.create(**kwargs)
+                except Exception as e:  # noqa: BLE001 — API error: move to next model
+                    logger.warning("chat_json API error on %s: %s", mdl, e)
+                    last_err = e
+                    break
+                text = (resp.choices[0].message.content or "").strip()
+                try:
+                    data = _loads_lenient(text)
+                    if self.cache:
+                        self.cache.set(key, data)
+                    return data
+                except Exception as e:  # noqa: BLE001 — malformed: nudge & retry
+                    last_err = e
+                    logger.warning("invalid JSON from %s (attempt %d/3): %s",
+                                   mdl, attempt + 1, e)
+                    conv = conv + [
+                        {"role": "assistant", "content": text[:4000]},
+                        {"role": "user", "content":
+                            f"Your previous reply was not valid JSON ({e}). Reply again "
+                            "with ONLY a single valid JSON object — no prose, no code "
+                            "fences, no comments, no trailing commas."},
+                    ]
+        raise LLMError(f"All models failed (json): {last_err}")
+
+    # ------------------------------------------------------------------ #
+    # multimodal: inspect an image (e.g. a fit-vs-data plot)
+    # ------------------------------------------------------------------ #
+    def chat_vision(self, system: str, user: str, image_path, *,
+                    model: Optional[str] = None, max_tokens: int = 1500,
+                    cache_key: Optional[str] = None) -> str:
+        import base64
+        from pathlib import Path as _P
+
+        img = _P(image_path)
+        try:
+            b64 = base64.b64encode(img.read_bytes()).decode()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("vision: cannot read image %s: %s", image_path, e)
+            return ""
+        mdl = model or self.settings.vision_model
+        key = cache_key or ("vision:" + mdl + ":" + md5(b64) + ":" + user[:200])
+        if self.cache:
+            hit = self.cache.get(key)
+            if hit is not None:
+                return hit.get("text", "")
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": [
+                {"type": "text", "text": user},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ]},
+        ]
+        for m in (mdl, self.settings.model):
             try:
                 resp = self.client.chat.completions.create(
-                    model=model, messages=messages, temperature=0, max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
-                )
+                    model=m, messages=messages, temperature=0, max_tokens=max_tokens)
                 text = (resp.choices[0].message.content or "").strip()
-                data = _loads_lenient(text)
                 if self.cache:
-                    self.cache.set(key, data)
-                return data
+                    self.cache.set(key, {"text": text, "model": m})
+                return text
             except Exception as e:  # noqa: BLE001
-                logger.warning("chat_json failed on %s: %s", model, e)
-                last_err = e
-        raise LLMError(f"All models failed (json): {last_err}")
+                logger.warning("vision call failed on %s: %s", m, e)
+        return ""
 
     # ------------------------------------------------------------------ #
     # agentic tool-calling loop
@@ -258,17 +329,23 @@ def _truncate(s: str, n: int) -> str:
 
 
 def _loads_lenient(text: str) -> dict:
-    """Parse JSON, tolerating code fences / leading prose."""
+    """Parse JSON, tolerating code fences, leading prose, and trailing commas."""
+    import re
+
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`")
         if text.lower().startswith("json"):
             text = text[4:]
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(text[start:end + 1])
-        raise
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    last_err: Exception = ValueError("empty")
+    for cand in candidates:
+        for variant in (cand, re.sub(r",\s*([}\]])", r"\1", cand)):  # strip trailing commas
+            try:
+                return json.loads(variant)
+            except json.JSONDecodeError as e:
+                last_err = e
+    raise last_err

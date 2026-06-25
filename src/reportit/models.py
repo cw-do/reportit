@@ -193,6 +193,40 @@ class FitResult:
 
 
 @dataclass
+class SasFitResult:
+    """Result of one sasmodels+bumps fit attempt."""
+    model_name: str
+    params: dict[str, float] = field(default_factory=dict)        # fitted values
+    uncertainties: dict[str, float] = field(default_factory=dict)
+    fixed: dict[str, float] = field(default_factory=dict)
+    reduced_chisq: Optional[float] = None
+    r_squared: Optional[float] = None
+    q: list = field(default_factory=list)         # fitted-window Q
+    i_data: list = field(default_factory=list)
+    i_model: list = field(default_factory=list)
+    q_excluded: list = field(default_factory=list)  # data outside the fit window
+    i_excluded: list = field(default_factory=list)
+    fit_qmin: Optional[float] = None
+    fit_qmax: Optional[float] = None
+    ok: bool = False
+    note: str = ""
+
+
+@dataclass
+class SasFitOutcome:
+    """Agentic fit for one group: chosen model, attempts, and verdict."""
+    group_id: str
+    label: str = ""
+    dataset_name: str = ""
+    success: bool = False
+    best: Optional[SasFitResult] = None
+    rationale: str = ""           # why this model was chosen
+    critique: str = ""            # final critic assessment
+    attempts: list = field(default_factory=list)  # [{model, reduced_chisq, verdict, note}]
+    figure: Optional["FigureRef"] = None
+
+
+@dataclass
 class DatasetAnalysis:
     output_name: str
     variant: str
@@ -266,6 +300,7 @@ class ReportModel:
     catalog_table: Optional[TableSpec] = None  # main-body Sample Summary
     appendix_tables: list[TableSpec] = field(default_factory=list)
     group_reports: list[GroupReport] = field(default_factory=list)
+    sas_fits: list = field(default_factory=list)  # list[SasFitOutcome]
     hypothesis_checks: list[HypothesisCheck] = field(default_factory=list)
     discussion: str = ""
     caveats: list[str] = field(default_factory=list)

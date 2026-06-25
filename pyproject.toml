@@ -25,6 +25,10 @@ dependencies = [
     # LLM (OpenRouter — OpenAI-compatible API)
     "openai>=1.0.0",
 
+    # SANS model fitting
+    "sasmodels>=1.0.0",
+    "bumps>=1.0.0",
+
     # Proposal PDF text extraction (pure python)
     "pypdf>=4.0.0",
 

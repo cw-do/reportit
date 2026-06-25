@@ -20,10 +20,13 @@ from . import pipeline
 @click.option("--strategy-only", is_flag=True,
               help="Print the LLM-derived AnalysisStrategy and stop.")
 @click.option("--refresh", is_flag=True, help="Bust caches (re-query ONCat/LLM).")
+@click.option("--sasfit", is_flag=True,
+              help="Run agentic sasmodels model-based fitting (model selection + "
+                   "bumps fit + critic loop) per group.")
 @click.option("--max-llm-steps", type=int, default=None,
               help="Max agentic strategy tool-calling steps.")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
-def main(target, out_dir, no_llm, no_proposal, strategy_only, refresh, max_llm_steps, verbose):
+def main(target, out_dir, no_llm, no_proposal, strategy_only, refresh, sasfit, max_llm_steps, verbose):
     """Generate an EQSANS post-experiment report for an IPTS number or shared path."""
     logging.basicConfig(
         level=logging.INFO if verbose or strategy_only else logging.WARNING,
@@ -44,7 +47,7 @@ def main(target, out_dir, no_llm, no_proposal, strategy_only, refresh, max_llm_s
             target, out_dir,
             no_llm=no_llm, no_proposal=no_proposal,
             strategy_only=strategy_only, refresh=refresh,
-            max_llm_steps=max_llm_steps,
+            sasfit=sasfit, max_llm_steps=max_llm_steps,
         )
     except Exception as e:  # noqa: BLE001
         click.echo(f"error: {e}", err=True)

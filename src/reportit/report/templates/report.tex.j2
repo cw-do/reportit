@@ -56,6 +56,42 @@
 <% endif %>
 <% endfor %>
 
+<% if sas_summary %>
+\section{Model-Based Fitting (sasmodels)}
+This section reports automated, AI-driven fitting of representative curves to
+SasView/sasmodels models: a reasoning agent selected candidate models and
+parameter setups from the curve shape and experiment context, each was fit with
+\texttt{bumps}, and a critic agent (including visual inspection of the fit)
+accepted or rejected it. Both successful and unsuccessful outcomes are reported.
+
+<< render_table(sas_summary.table) >>
+
+<% for s in sas_sections %>
+\subsection{<< s.title >>}
+\textbf{Selected model:} << s.model >> \quad \textbf{Status:} << s.status >> <% if s.chisq != '—' %>\quad ($\chi^2_\nu$ = << s.chisq >>)<% endif %>
+
+<% if s.rationale %>\emph{Model choice:} << s.rationale >>
+
+<% endif %>
+<% if s.figure %>
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=<< s.figure.width >>]{<< s.figure.path >>}
+  \caption{<< s.figure.caption >>}
+  \label{<< s.figure.label >>}
+\end{figure}
+<% endif %>
+<% if s.params_table %><< render_table(s.params_table) >>
+<% endif %>
+<% if s.critique %>\emph{Critic assessment:} << s.critique >>
+
+<% endif %>
+<% if s.attempts %>\emph{Models tried:} << s.attempts >>.
+
+<% endif %>
+<% endfor %>
+<% endif %>
+
 <% if hypothesis_checks %>
 \section{Hypothesis Assessment}
 \begin{longtable}{p{6cm} l l p{4cm}}

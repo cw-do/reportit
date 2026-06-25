@@ -11,6 +11,8 @@ from pathlib import Path
 
 DEFAULT_MODEL = "openai/gpt-5-mini"
 FALLBACK_MODEL = "google/gemini-3-flash-preview"
+DEFAULT_REASONING_MODEL = "z-ai/glm-5.2"      # text logic (model selection / critique)
+DEFAULT_VISION_MODEL = "google/gemini-3.5-flash"  # multimodal (inspect fit plots)
 
 
 @dataclass
@@ -20,6 +22,8 @@ class LLMSettings:
     api_key: str = ""
     model: str = DEFAULT_MODEL
     fallback_model: str = FALLBACK_MODEL
+    reasoning_model: str = DEFAULT_REASONING_MODEL
+    vision_model: str = DEFAULT_VISION_MODEL
     base_url: str = "https://openrouter.ai/api/v1"
 
     @property
@@ -59,6 +63,8 @@ class AppSettings:
             api_key=(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY ") or "").strip(),
             model=os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL).strip(),
             fallback_model=os.getenv("OPENROUTER_FALLBACK_MODEL", FALLBACK_MODEL).strip(),
+            reasoning_model=os.getenv("OPENROUTER_REASONING_MODEL", DEFAULT_REASONING_MODEL).strip(),
+            vision_model=os.getenv("OPENROUTER_VISION_MODEL", DEFAULT_VISION_MODEL).strip(),
             base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip(),
         )
         try:
