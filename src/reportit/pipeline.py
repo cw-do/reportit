@@ -132,6 +132,8 @@ def run_report(
         for d in datasets:
             name_to_ds.setdefault(d.output_name, []).append(d)
         variants = set(strategy.variant_decision.variants_used or [])
+        # resolve members up-front so we know how many groups will actually be fit
+        pending = []
         for g in strategy.groups:
             members = []
             for nm in g.members:
@@ -139,15 +141,23 @@ def run_report(
                          if not variants or d.variant in variants] or name_to_ds.get(nm, [])
                 if cands:
                     members.append(cands[0])
-            if not members:
-                continue
-            logger.info("sasfit: fitting group %s ...", g.group_id)
+            if members:
+                pending.append((g, members))
+
+        total = len(pending)
+        logger.info("sasfit: model-based fitting for %d group(s)...", total)
+        for idx, (g, members) in enumerate(pending, 1):
+            logger.info("sasfit: [%d/%d] fitting group %s (%d members) ...",
+                        idx, total, g.group_id, len(members))
             try:
                 outcome = sas_agent.run_group_fit(
                     g, members, llm, fig_dir, strategy.experiment_summary)
                 sas_outcomes.append(outcome)
+                model = outcome.best.model_name if outcome.best else "none"
+                logger.info("sasfit: [%d/%d] %s -> %s (%s)", idx, total, g.group_id,
+                            model, "accepted" if outcome.success else "no satisfactory fit")
             except Exception as e:  # noqa: BLE001
-                logger.warning("sasfit failed for %s: %s", g.group_id, e)
+                logger.warning("sasfit: [%d/%d] failed for %s: %s", idx, total, g.group_id, e)
 
     # 8) global narrative + hypothesis checks
     overview, discussion, checks = synthesize.global_narrative(
