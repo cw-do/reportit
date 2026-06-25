@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def _numeric_rows(path: Path) -> np.ndarray:
     """Read only rows whose first token parses as a float (skips text headers)."""
     rows = []
-    with open(path) as f:
+    with open(path, errors="replace") as f:
         for line in f:
             s = line.strip()
             if not s or s.startswith("#"):

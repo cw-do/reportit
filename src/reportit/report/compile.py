@@ -30,7 +30,7 @@ def compile_pdf(tex_path: Path) -> Path | None:
     for _ in range(2):  # twice for refs/labels/longtable
         try:
             proc = subprocess.run(cmd, cwd=str(out_dir), capture_output=True,
-                                  text=True, timeout=180)
+                                  text=True, errors="replace", timeout=180)
         except (subprocess.TimeoutExpired, OSError) as e:
             logger.warning("pdflatex invocation failed: %s", e)
             ok = False

@@ -36,20 +36,38 @@ def _render_table(table: TableSpec) -> str:
     if table is None or not table.rows:
         return ""
     ncol = len(table.headers)
-    colspec = "l" * ncol
+    colspec = table.colspec or ("l" * ncol)
+    size = "\\" + (table.fontsize or "small")
     head = " & ".join(f"\\textbf{{{L.escape(h)}}}" for h in table.headers)
     body_lines = []
     for row in table.rows:
         cells = [L.escape(c) for c in row]
-        # pad/truncate to header width
         cells = (cells + [""] * ncol)[:ncol]
         body_lines.append(" & ".join(cells) + r" \\")
     body = "\n".join(body_lines)
+    cap = L.escape_keep_math(table.caption)
+
+    if table.longtable:
+        out = (
+            f"{{{size}\n"
+            f"\\begin{{longtable}}{{{colspec}}}\n"
+            f"\\caption{{{cap}}}\\label{{{table.label}}}\\\\\n"
+            f"\\toprule\n{head} \\\\\n\\midrule\n\\endfirsthead\n"
+            f"\\toprule\n{head} \\\\\n\\midrule\n\\endhead\n"
+            f"\\midrule\\multicolumn{{{ncol}}}{{r}}{{\\textit{{continued on next page}}}}\\\\\n\\endfoot\n"
+            f"\\bottomrule\n\\endlastfoot\n"
+            f"{body}\n"
+            f"\\end{{longtable}}\n}}"
+        )
+        if table.landscape:
+            out = "\\begin{landscape}\n" + out + "\n\\end{landscape}"
+        return out
+
     return (
-        "\\begin{table}[H]\n\\centering\n\\small\n"
+        "\\begin{table}[H]\n\\centering\n" + size + "\n"
         f"\\begin{{tabular}}{{{colspec}}}\n\\toprule\n{head} \\\\\n\\midrule\n"
         f"{body}\n\\bottomrule\n\\end{{tabular}}\n"
-        f"\\caption{{{L.escape_keep_math(table.caption)}}}\n"
+        f"\\caption{{{cap}}}\n"
         f"\\label{{{table.label}}}\n\\end{{table}}"
     )
 
@@ -76,6 +94,12 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
             "confidence": L.escape(h.confidence), "evidence": L.escape(h.evidence)}
            for h in model.hypothesis_checks]
 
+    appendix = []
+    if mode == "comprehensive":
+        for t in model.appendix_tables:
+            appendix.append({"section_title": L.escape(t.section_title or "Appendix Table"),
+                             "table": t})
+
     return template.render(
         mode=mode,
         title=L.escape(model.title),
@@ -84,6 +108,7 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
         science_goals=[L.escape_keep_math(g) for g in
                        (model.context.proposal.science_goals if model.context.proposal else [])],
         catalog_table=model.catalog_table,
+        appendix_tables=appendix,
         group_reports=groups,
         hypothesis_checks=hyp,
         discussion=L.escape_keep_math(model.discussion),

@@ -12,6 +12,7 @@ from typing import Optional
 import numpy as np
 
 from ..models import FitResult
+from .clean import clean_low_q
 from .loaders import load_iq
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,56 @@ def powerlaw_fit(q, i, qmin=None, qmax=None, kind="powerlaw") -> FitResult:
     return res
 
 
+def correlation_fit(q, i, err=None, qmin=None, qmax=None) -> FitResult:
+    """Ornstein-Zernike correlation-length fit: I(q) = I0 / (1 + (q*xi)^2) + bkg.
+
+    Good for solution scattering with a low-Q plateau rolling into a power law —
+    the regime where Guinier (compact-particle) analysis is inappropriate.
+    """
+    from scipy.optimize import curve_fit
+
+    res = FitResult(kind="correlation", q_range=(qmin or 0.0, qmax or 0.0))
+    q, i = _window(np.asarray(q, float), np.asarray(i, float), qmin, qmax)
+    if q.size < 5:
+        res.note = "too few points"
+        return res
+
+    def model(qq, i0, xi, bkg):
+        return i0 / (1.0 + (qq * xi) ** 2) + bkg
+
+    i0_0 = float(np.max(i))
+    bkg_0 = float(max(np.min(i), 0.0))
+    # xi guess: where intensity falls to half of its low-q value
+    half = i0_0 / 2.0
+    below = q[i <= half]
+    xi_0 = float(1.0 / below[0]) if below.size else float(1.0 / np.median(q))
+    try:
+        popt, _ = curve_fit(model, q, i, p0=[i0_0, xi_0, bkg_0],
+                            bounds=([0, 0, 0], [np.inf, np.inf, np.inf]), maxfev=10000)
+    except Exception as e:  # noqa: BLE001
+        res.note = str(e)
+        return res
+    i0, xi, bkg = (float(v) for v in popt)
+    yhat = model(q, *popt)
+    res.params = {"I0": i0, "xi": xi, "bkg": bkg}
+    res.q_range = (float(q.min()), float(q.max()))
+    res.r_squared = _r_squared(i, yhat)
+    res.ok = True
+    return res
+
+
 def run_fit(iq_path: str | Path, model: str, qmin: Optional[float] = None,
-            qmax: Optional[float] = None) -> FitResult:
+            qmax: Optional[float] = None, trim_low_q: bool = True) -> FitResult:
     iq = load_iq(iq_path)
+    q, i, err = np.asarray(iq.mod_q), np.asarray(iq.intensity), iq.error
+    if trim_low_q:
+        q, i, err, _ = clean_low_q(q, i, err)
     model = (model or "").lower()
     if model == "guinier":
-        return guinier_fit(iq.mod_q, iq.intensity, qmin, qmax)
+        return guinier_fit(q, i, qmin, qmax)
+    if model in ("correlation", "ornstein_zernike", "ornstein-zernike", "oz", "lorentzian"):
+        return correlation_fit(q, i, err, qmin, qmax)
     if model in ("porod", "powerlaw", "power-law", "power_law"):
-        return powerlaw_fit(iq.mod_q, iq.intensity, qmin, qmax,
+        return powerlaw_fit(q, i, qmin, qmax,
                             kind="porod" if model == "porod" else "powerlaw")
     return FitResult(kind=model or "unknown", note="unsupported model")

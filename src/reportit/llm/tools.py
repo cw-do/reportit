@@ -116,7 +116,13 @@ FINALIZE_STRATEGY = _fn(
                 "properties": {
                     "group_id": {"type": "string"},
                     "should_fit": {"type": "boolean"},
-                    "model": {"type": "string", "enum": ["guinier", "porod", "powerlaw", "none"]},
+                    "model": {"type": "string",
+                        "enum": ["guinier", "correlation", "porod", "powerlaw", "none"],
+                        "description": "guinier = compact-particle Rg (ONLY if a clear "
+                        "low-Q plateau/knee exists); correlation = Ornstein-Zernike "
+                        "correlation length xi (solution scattering with a low-Q plateau "
+                        "rolling into a power law); porod/powerlaw = interfacial/network "
+                        "slope. Choose based on the actual curve shape from sample_curve."},
                     "q_min": {"type": "number"},
                     "q_max": {"type": "number"},
                     "rationale": {"type": "string"},

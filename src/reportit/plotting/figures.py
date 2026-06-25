@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
 
+from ..analysis.clean import clean_low_q  # noqa: E402
 from ..analysis.loaders import load_iq, load_iqxqy  # noqa: E402
 from ..models import Dataset, FitResult  # noqa: E402
 
@@ -53,7 +54,7 @@ def overlay_iq(
         except Exception as e:  # noqa: BLE001
             logger.warning("skip %s: %s", path, e)
             continue
-        q, i = np.asarray(iq.mod_q), np.asarray(iq.intensity)
+        q, i, _, _ = clean_low_q(np.asarray(iq.mod_q), np.asarray(iq.intensity))
         mask = (q > 0) & (i > 0) & np.isfinite(q) & np.isfinite(i)
         if mask.sum() < 2:
             continue
@@ -104,6 +105,12 @@ def _overlay_fit(ax, ds: Dataset, fit: FitResult, prefer_merged: bool) -> None:
         rg, i0 = fit.params["Rg"], fit.params["I0"]
         model = i0 * np.exp(-(rg ** 2) * qq ** 2 / 3.0)
         ax.plot(qq, model, "k--", linewidth=1.5, label=f"Guinier fit (Rg={rg:.1f} Å)")
+    elif fit.kind == "correlation" and "xi" in fit.params:
+        i0 = fit.params["I0"]
+        xi = fit.params["xi"]
+        bkg = fit.params.get("bkg", 0.0)
+        model = i0 / (1.0 + (qq * xi) ** 2) + bkg
+        ax.plot(qq, model, "k--", linewidth=1.5, label=f"OZ fit ($\\xi$={xi:.1f} Å)")
     elif fit.kind in ("porod", "powerlaw") and "exponent" in fit.params:
         p, a = fit.params["exponent"], fit.params["prefactor"]
         ax.plot(qq, a * qq ** p, "k--", linewidth=1.5, label=f"power law (p={p:.2f})")

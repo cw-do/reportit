@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from ..models import DatasetAnalysis
+from .clean import clean_low_q
 from .loaders import load_iq
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,14 @@ def analyze(output_name: str, variant: str, iq_path: str | Path) -> DatasetAnaly
     q, i = np.asarray(iq.mod_q), np.asarray(iq.intensity)
     good = np.isfinite(q) & np.isfinite(i)
     q, i = q[good], i[good]
+    if q.size == 0:
+        da.flags.append("empty")
+        return da
+
+    # drop leading low-Q beam-mask outliers before computing slopes/range
+    q, i, _, n_dropped = clean_low_q(q, i)
+    if n_dropped:
+        da.flags.append(f"dropped_lowq_outlier:{n_dropped}")
     if q.size == 0:
         da.flags.append("empty")
         return da

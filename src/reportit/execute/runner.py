@@ -156,6 +156,11 @@ def _metrics_table(group_id: str, analyses, fit) -> TableSpec | None:
             caption += (f" Guinier fit: Rg={_fmt(fit.params.get('Rg'))} $\\mathrm{{\\AA}}$, "
                         f"I0={_fmt(fit.params.get('I0'))} cm$^{{-1}}$ "
                         f"(R²={_fmt(fit.r_squared)}).")
+        elif fit.kind == "correlation":
+            caption += (f" Ornstein-Zernike fit: correlation length "
+                        f"$\\xi$={_fmt(fit.params.get('xi'))} $\\mathrm{{\\AA}}$, "
+                        f"I0={_fmt(fit.params.get('I0'))} cm$^{{-1}}$ "
+                        f"(R²={_fmt(fit.r_squared)}).")
         else:
             caption += (f" {fit.kind} fit: exponent={_fmt(fit.params.get('exponent'))} "
                         f"(R²={_fmt(fit.r_squared)}).")

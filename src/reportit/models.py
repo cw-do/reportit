@@ -222,6 +222,11 @@ class TableSpec:
     label: str
     headers: list[str]
     rows: list[list[str]]
+    longtable: bool = False
+    landscape: bool = False
+    fontsize: str = "small"  # small | footnotesize | scriptsize | normalsize
+    colspec: Optional[str] = None
+    section_title: Optional[str] = None  # used when rendered as an appendix section
 
 
 @dataclass
@@ -258,7 +263,8 @@ class ReportModel:
     context: ExperimentContext
     title: str
     overview: str = ""
-    catalog_table: Optional[TableSpec] = None
+    catalog_table: Optional[TableSpec] = None  # main-body Sample Summary
+    appendix_tables: list[TableSpec] = field(default_factory=list)
     group_reports: list[GroupReport] = field(default_factory=list)
     hypothesis_checks: list[HypothesisCheck] = field(default_factory=list)
     discussion: str = ""

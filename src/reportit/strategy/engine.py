@@ -45,9 +45,19 @@ WHY (read NOTE.md and compare).
   - Exclude calibration standards (e.g. porsil) from science groups.
   - Group datasets into meaningful comparisons: temperature series, concentration \
 series, config sets, etc. Order them sensibly.
-  - For each group decide whether a quantitative model fit (Guinier Rg/I0, Porod \
-or power-law slope) is scientifically sensible given the data shape and proposal; \
-only request fits where they make sense.
+  - For each group decide whether a quantitative model fit is sensible, and WHICH \
+one, by actually looking at the curve shape via sample_curve. Guidance:
+      * Guinier (Rg) ONLY when there is a clear low-Q plateau that bends into a \
+knee — i.e. compact, finite-size particles. Do NOT default to Guinier; a curve \
+that keeps rising toward low Q or is a featureless power law is NOT a Guinier case.
+      * correlation (Ornstein-Zernike correlation length xi) when the curve has a \
+low-Q plateau rolling into a power-law decay — typical of polymer/solution \
+scattering. This is often the right choice for single-chain or network solutions.
+      * porod / powerlaw when the curve is dominated by a power-law slope \
+(interfaces, networks, mass/surface fractals).
+      * Note that the 1-2 lowest-Q points are frequently beam-stop/mask artifacts \
+(outliers); the tool already trims them, so do not let them drive your choice.
+    Set q_min/q_max to the region where the chosen model actually applies.
 
 Be thorough — call as many tools as you need. When confident, call \
 `finalize_strategy` exactly once with a complete, well-justified strategy."""

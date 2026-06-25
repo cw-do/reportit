@@ -18,11 +18,10 @@ from .models import (
     ExperimentContext,
     ProposalInfo,
     ReportModel,
-    TableSpec,
 )
 from .narrative import synthesize
 from .proposal import summarize
-from .report import assemble, compile as texcompile
+from .report import assemble, compile as texcompile, tables
 from .strategy import engine
 
 logger = logging.getLogger(__name__)
@@ -128,11 +127,16 @@ def run_report(
     caveats = list(ctx.degraded) + list(strategy.caveats)
     if strategy.variant_decision.rationale:
         caveats.append("Variant choice: " + strategy.variant_decision.rationale)
+    appendix = [t for t in (
+        tables.build_reduction_table(datasets, strategy),
+        tables.build_catalog_table(catalog),
+    ) if t is not None]
     model = ReportModel(
         context=ctx,
         title=_title(ctx, proposal),
         overview=overview or strategy.experiment_summary,
-        catalog_table=_overview_table(datasets, strategy),
+        catalog_table=tables.build_sample_summary(datasets, strategy, proposal),
+        appendix_tables=appendix,
         group_reports=group_reports,
         hypothesis_checks=checks,
         discussion=discussion,
@@ -175,39 +179,6 @@ def _title(ctx, proposal) -> str:
     if proposal and proposal.title:
         return f"EQSANS IPTS-{ctx.ipts}: {proposal.title}"
     return f"EQSANS Experiment Report — IPTS-{ctx.ipts}"
-
-
-def _overview_table(datasets, strategy) -> TableSpec | None:
-    variants = set(strategy.variant_decision.variants_used or [])
-    seen: dict[str, dict] = {}
-    for d in datasets:
-        if d.is_standard:
-            continue
-        if variants and d.variant not in variants:
-            continue
-        rec = seen.setdefault(d.base, {"configs": set(), "temps": set(),
-                                       "run": None, "title": None, "n": 0})
-        rec["n"] += 1
-        if d.config:
-            rec["configs"].add(d.config)
-        if d.temperature:
-            rec["temps"].add(d.temperature)
-        if rec["run"] is None and d.meta and d.meta.sample_run:
-            rec["run"] = d.meta.sample_run
-            rec["title"] = d.oncat_title
-    if not seen:
-        return None
-    headers = ["Sample", "Title (ONCat)", "Runs", "Configs", "Temperatures", "# datasets"]
-    rows = []
-    for base, rec in sorted(seen.items()):
-        rows.append([
-            base, (rec["title"] or "—")[:40], rec["run"] or "—",
-            ", ".join(sorted(rec["configs"])) or "—",
-            ", ".join(sorted(rec["temps"])) or "—",
-            str(rec["n"]),
-        ])
-    return TableSpec(caption="Reduced samples in this experiment (calibration standards excluded).",
-                     label="tab:overview", headers=headers, rows=rows)
 
 
 def _dedupe(items) -> list[str]:
