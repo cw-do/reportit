@@ -75,10 +75,11 @@ OPENROUTER_VISION_MODEL=google/gemini-3.5-flash     # visually inspect fit plots
 
 The `.env` is gitignored — never commit it.
 
-## Model-based fitting (`--sasfit`)
+## Model-based fitting (on by default; `--no-sasfit` to skip)
 
-`reportit 38533 --sasfit` adds an agentic, sasmodels-based fitting stage. Per
-sample group it runs a multi-agent loop:
+Every run does an agentic, sasmodels-based fitting stage (it's the core of the
+analysis). Use `--no-sasfit` for a quick run without it. Per sample group it runs
+a multi-agent loop:
 
 1. a **reasoning agent** (glm-5.2) selects candidate SasView/sasmodels models and
    a parameter plan (initial guesses, which params to fit vs fix, bounds, and an
@@ -87,9 +88,12 @@ sample group it runs a multi-agent loop:
 3. a **critic** judges it — a multimodal model (gemini) visually inspects the
    fit-vs-data plot, and the reasoning model evaluates χ², residuals, and
    parameter sanity — then accepts or rejects and the loop iterates;
-4. the report's "Model-Based Fitting" section shows the chosen model, fitted
-   parameters, the fit figure, and the critic's verdict — **including honest
-   failures**.
+4. once a model is chosen, **every member of the group is fit with it**, and the
+   report tabulates and plots the trend of the key parameter across the series
+   (e.g. correlation length or Rg vs temperature);
+5. the report's "Model-Based Fitting" section shows the chosen model, fitted
+   parameters, the fit figure, the per-member trend, and the critic's verdict —
+   **including honest failures**.
 
 Partial-Q-range fits are first-class: a low-Q upturn (aggregation / large-scale
 structure outside the length scale of interest) can be excluded so the model is
@@ -104,7 +108,7 @@ fit only over the regime it applies to; excluded points are shown faintly.
 | `--no-llm` | deterministic mode: heuristic grouping, no LLM reasoning |
 | `--no-proposal` | ignore the proposal PDF(s) |
 | `--refresh` | bust caches (re-query ONCat / re-run LLM) |
-| `--sasfit` | run agentic sasmodels model-based fitting per group (see below) |
+| `--no-sasfit` | skip the agentic sasmodels model-based fitting (on by default) |
 | `--max-llm-steps N` | cap on agentic strategy tool-calling steps (default 40) |
 | `-v, --verbose` | verbose logging (shows each strategy probe) |
 

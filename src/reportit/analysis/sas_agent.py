@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import numpy as np
@@ -149,6 +150,7 @@ def run_group_fit(
         return out
 
     best = None
+    best_cand = None
     iq = load_iq(feats["path"])
     for cand in candidates[:max_models]:
         model_name = cand.get("model")
@@ -190,6 +192,7 @@ def run_group_fit(
         # track best by accept-then-lowest-chisq
         if best is None or _better(result, verdict, best, out):
             best = result
+            best_cand = cand
             out.best = result
             out.figure = _figref(fig_path, group.label, model_name, result)
             out.critique = verdict.get("assessment", "")
@@ -200,7 +203,86 @@ def run_group_fit(
 
     if out.best is None:
         out.critique = out.critique or "All candidate fits failed."
+        return out
+
+    # Fit EVERY member with the chosen model so we can report a trend
+    # (e.g. Rg vs temperature). Pure bumps fits — no extra LLM calls.
+    try:
+        _fit_all_members(out, group, members, best.model_name, best_cand, fig_dir)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("per-member fitting failed for %s: %s", group.group_id, e)
     return out
+
+
+def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
+    primary = _primary_param(cand, model_name)
+    out.trend_param = primary or ""
+    fits = []
+    for ds in members:
+        path = ds.merged_path or ds.iq_path
+        if not path or not Path(path).is_file():
+            continue
+        try:
+            iq = load_iq(path)
+            r = sasfit.fit_curve(
+                iq.mod_q, iq.intensity, iq.error, model_name=model_name,
+                initial=(cand or {}).get("initial") or {},
+                fit_params=(cand or {}).get("fit") or [],
+                bounds=(cand or {}).get("bounds") or {},
+                q_min=(cand or {}).get("q_min"), q_max=(cand or {}).get("q_max"))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("member fit failed %s: %s", ds.output_name, e)
+            continue
+        if not r.ok:
+            continue
+        cond_val = _temp_value(ds.temperature)
+        fits.append({
+            "name": ds.output_name,
+            "condition": ds.temperature or "RT",
+            "condition_val": cond_val,
+            "params": r.params, "uncertainties": r.uncertainties,
+            "reduced_chisq": r.reduced_chisq,
+        })
+    out.member_fits = fits
+
+    # trend figure for the primary parameter
+    if primary and len(fits) >= 2:
+        have = [f for f in fits if primary in (f["params"] or {})]
+        numeric = [f for f in have if f["condition_val"] is not None]
+        use_numeric = len(numeric) >= 2
+        src = numeric if use_numeric else have
+        points = [(f["condition_val"], f["params"].get(primary),
+                   (f["uncertainties"] or {}).get(primary, 0), str(f["condition"]))
+                  for f in src]
+        if len(points) >= 2:
+            xlabel = "Temperature (C)" if use_numeric else "sample"
+            fig_path = fig_dir / f"trend_{_safe(group.group_id)}_{_safe(primary)}.png"
+            made = figures.plot_trend(group.label, primary, points, fig_path,
+                                      xlabel=xlabel, numeric_x=use_numeric)
+            if made:
+                from ..models import FigureRef
+                out.trend_figure = FigureRef(
+                    path=made,
+                    caption=(f"Trend of fitted {primary} (from the {model_name} model) "
+                             f"across {group.label}."),
+                    label=f"fig:trend_{_safe(group.group_id)}")
+
+
+def _primary_param(cand, model_name) -> str | None:
+    fit_params = [p for p in ((cand or {}).get("fit") or [])
+                  if p.lower() not in ("scale", "background", "bkg")]
+    for pref in ("rg", "xi", "cor_length", "correlation_length", "radius",
+                 "length", "i_zero", "rg_1", "lorentz_scale"):
+        if pref in fit_params:
+            return pref
+    return fit_params[0] if fit_params else None
+
+
+def _temp_value(temp):
+    if not temp:
+        return None
+    m = re.search(r"-?\d+(?:\.\d+)?", str(temp))
+    return float(m.group()) if m else None
 
 
 def _critique(llm, reasoning, label, result, vision_note, context) -> dict:

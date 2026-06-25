@@ -182,6 +182,41 @@ def plot_fit(result, out_path: Path, *, title: str = "") -> Path | None:
     return out_path
 
 
+def plot_trend(label: str, param: str, points: list, out_path: Path,
+               *, xlabel: str = "condition", numeric_x: bool = True) -> Path | None:
+    """Plot a fitted parameter vs condition (e.g. Rg vs temperature).
+
+    points: list of (x_value, y_value, y_err, x_label_text).
+    """
+    pts = [p for p in points if p[1] is not None and np.isfinite(p[1])]
+    if len(pts) < 2:
+        return None
+    if numeric_x and all(p[0] is not None for p in pts):
+        pts = sorted(pts, key=lambda p: p[0])
+        xs = [p[0] for p in pts]
+        ticks = None
+    else:
+        xs = list(range(len(pts)))
+        ticks = [p[3] for p in pts]
+    ys = [p[1] for p in pts]
+    es = [p[2] if (p[2] and np.isfinite(p[2])) else 0 for p in pts]
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.errorbar(xs, ys, yerr=es, fmt="o-", capsize=3, color="tab:blue")
+    if ticks is not None:
+        ax.set_xticks(xs)
+        ax.set_xticklabels(ticks, rotation=30, ha="right", fontsize=8)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(param)
+    ax.set_title(f"{label}: {param} vs {xlabel}")
+    ax.grid(True, alpha=0.2)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path
+
+
 def plot_2d(ds: Dataset, out_path: Path, *, markersize: int = 10) -> Path | None:
     if not ds.iqxqy_path or not Path(ds.iqxqy_path).is_file():
         return None

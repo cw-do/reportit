@@ -20,9 +20,10 @@ from . import pipeline
 @click.option("--strategy-only", is_flag=True,
               help="Print the LLM-derived AnalysisStrategy and stop.")
 @click.option("--refresh", is_flag=True, help="Bust caches (re-query ONCat/LLM).")
-@click.option("--sasfit", is_flag=True,
-              help="Run agentic sasmodels model-based fitting (model selection + "
-                   "bumps fit + critic loop) per group.")
+@click.option("--sasfit/--no-sasfit", default=True,
+              help="Agentic sasmodels model-based fitting (model selection + bumps "
+                   "fit + critic loop, then fit every member) per group. On by "
+                   "default; use --no-sasfit for a quick run without it.")
 @click.option("--max-llm-steps", type=int, default=None,
               help="Max agentic strategy tool-calling steps.")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")

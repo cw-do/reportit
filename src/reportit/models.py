@@ -234,6 +234,11 @@ class SasFitOutcome:
     critique: str = ""            # final critic assessment
     attempts: list = field(default_factory=list)  # [{model, reduced_chisq, verdict, note}]
     figure: Optional["FigureRef"] = None
+    # every member fit with the chosen model, for trend analysis
+    member_fits: list = field(default_factory=list)  # [{name, condition, condition_val,
+    #                                                    params, uncertainties, reduced_chisq}]
+    trend_param: str = ""          # the parameter trended (e.g. "rg")
+    trend_figure: Optional["FigureRef"] = None
 
 
 @dataclass

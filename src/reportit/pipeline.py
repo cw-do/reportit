@@ -50,7 +50,7 @@ def run_report(
     no_proposal: bool = False,
     strategy_only: bool = False,
     refresh: bool = False,
-    sasfit: bool = False,
+    sasfit: bool = True,
     max_llm_steps: Optional[int] = None,
 ) -> RunResult:
     out_dir = Path(out_dir)

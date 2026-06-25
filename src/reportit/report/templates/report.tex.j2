@@ -86,6 +86,16 @@ accepted or rejected it. Both successful and unsuccessful outcomes are reported.
 <% if s.critique %>\emph{Critic assessment:} << s.critique >>
 
 <% endif %>
+<% if s.member_table %><< render_table(s.member_table) >>
+<% endif %>
+<% if s.trend_figure %>
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=<< s.trend_figure.width >>]{<< s.trend_figure.path >>}
+  \caption{<< s.trend_figure.caption >>}
+  \label{<< s.trend_figure.label >>}
+\end{figure}
+<% endif %>
 <% if s.attempts %>\emph{Models tried:} << s.attempts >>.
 
 <% endif %>

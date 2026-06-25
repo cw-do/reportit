@@ -155,6 +155,12 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             fig = {"path": str(o.figure.path),
                    "caption": L.escape_keep_math(o.figure.caption),
                    "label": o.figure.label, "width": "0.8\\textwidth"}
+        trend_fig = None
+        if getattr(o, "trend_figure", None):
+            trend_fig = {"path": str(o.trend_figure.path),
+                         "caption": L.escape_keep_math(o.trend_figure.caption),
+                         "label": o.trend_figure.label, "width": "0.7\\textwidth"}
+        member_table = _member_fit_table(o)
         sections.append({
             "title": L.escape(o.label or o.group_id),
             "status": "Accepted" if o.success else "No satisfactory model found",
@@ -166,9 +172,34 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             "attempts": attempts,
             "params_table": params_table,
             "figure": fig,
+            "trend_figure": trend_fig,
+            "member_table": member_table,
             "dataset": L.escape(o.dataset_name),
         })
     return sections
+
+
+def _member_fit_table(o):
+    """Per-member fit of the chosen model (the trend), e.g. one row per temperature."""
+    fits = getattr(o, "member_fits", None) or []
+    primary = getattr(o, "trend_param", "") or ""
+    if len(fits) < 2 or not primary:
+        return None
+    rows = []
+    for f in fits:
+        val = (f.get("params") or {}).get(primary)
+        unc = (f.get("uncertainties") or {}).get(primary, 0) or 0
+        rows.append([
+            f.get("name", ""), str(f.get("condition", "")),
+            _fmt(val), _fmt(unc) if unc else "—",
+            _fmt(f.get("reduced_chisq"), 3),
+        ])
+    return TableSpec(
+        caption=f"Per-member fit of the chosen model across {o.label}: "
+                f"{primary} and reduced chi-squared for each dataset.",
+        label=f"tab:trend_{_safe(o.group_id)}",
+        headers=["Dataset", "Condition", primary, f"d{primary}", "Reduced chi2"],
+        rows=rows, fontsize="small")
 
 
 def _build_sas_summary(model: ReportModel) -> dict | None:
