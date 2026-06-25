@@ -33,3 +33,7 @@ reports/
 # OS / editor
 .DS_Store
 *.swp
+
+# Local reference docs (copyrighted articles) — kept local, not pushed
+knowledge/sources/
+knowledge/**/*.pdf
