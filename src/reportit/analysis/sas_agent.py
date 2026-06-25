@@ -24,7 +24,7 @@ import numpy as np
 from ..llm import LLMClient
 from ..models import Dataset, SasFitOutcome
 from ..plotting import figures
-from . import sascatalog, sasfit
+from . import knowledge, sascatalog, sasfit
 from .loaders import load_iq
 from .metrics import analyze
 
@@ -65,7 +65,12 @@ _CRITIC_SYS = (
     "residuals are random vs systematic, and whether parameters are physical and "
     "well-constrained. Reject only when the model is wrong for the regime it claims "
     "to describe (systematic misfit inside the fitted window, or unphysical "
-    "parameters)."
+    "parameters).\n"
+    "WEIGHTING: in SANS, reduced chi-squared and R^2 are necessary but NOT "
+    "sufficient — the VISUAL assessment (does the fitted line follow the data, are "
+    "residuals random?) is the primary criterion. A visually faithful fit with "
+    "moderate chi-squared can be acceptable; a low-chi-squared fit with systematic "
+    "residuals or a parameter pinned at a bound should be rejected."
 )
 
 _VISION_SYS = (
@@ -99,7 +104,10 @@ def _curve_features(ds: Dataset) -> dict:
 def _select_prompt(context: str, group_label: str, feats: dict, catalog: list) -> str:
     cat = "\n".join(f"- {m['name']}: {m['description']} [params: {', '.join(m['parameters'])}]"
                     for m in catalog)
+    kb = knowledge.load_knowledge()
+    kb_block = f"REFERENCE KNOWLEDGE (general SANS model-selection guidance):\n{kb}\n\n" if kb else ""
     return (
+        kb_block +
         f"EXPERIMENT CONTEXT:\n{context}\n\n"
         f"GROUP: {group_label}\n\n"
         f"CURVE FEATURES:\n{json.dumps(feats, default=str)}\n\n"
@@ -204,6 +212,11 @@ def run_group_fit(
     if out.best is None:
         out.critique = out.critique or "All candidate fits failed."
         return out
+
+    # model description / equation for the report
+    det = sascatalog.model_detail(out.best.model_name)
+    if det:
+        out.model_description = det.get("description", "")
 
     # Fit EVERY member with the chosen model so we can report a trend
     # (e.g. Rg vs temperature). Pure bumps fits — no extra LLM calls.

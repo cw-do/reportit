@@ -21,11 +21,30 @@ logger = logging.getLogger(__name__)
 
 _GROUP_SYS = (
     "You are a SANS expert writing the results subsection for one group of EQSANS "
-    "measurements. Given the group's metadata, per-dataset metrics, and any fit, "
-    "write 2-4 sentences of factual scientific observation (trends across "
-    "temperature/concentration/config, Q-dependence, fit interpretation). No "
-    "markdown, no headings — just prose."
+    "measurements. Given the group's metadata, per-dataset metrics, any fit, and a "
+    "visual description of the actual I(Q) overlay plot, write 2-4 sentences of "
+    "factual scientific observation: the shape/Q-dependence seen in the plot, how "
+    "the curves differ across the series (temperature/concentration), any peaks, "
+    "plateaus, low-Q upturns or power-law regions, and what it means in the "
+    "experiment's context. Ground statements in what the plot shows. No markdown, "
+    "no headings — just prose."
 )
+
+_OBS_VISION_SYS = (
+    "You are a SANS expert visually inspecting a log-log I(Q) overlay plot for a "
+    "group of related samples. Describe concretely what you SEE: overall shape and "
+    "Q-dependence, approximate power-law slopes, any low-Q plateau or upturn, peaks "
+    "or knees, and — importantly — how the curves differ from each other across the "
+    "series (do they shift up/down, change slope, move a feature?). Be specific."
+)
+
+
+def _vision_question(gr, context: str) -> str:
+    return (
+        f"Experiment context: {context[:800]}\n"
+        f"This plot is: {gr.group.label} (a {gr.group.kind}). "
+        "Describe what the overlaid I(Q) curves show and how they differ across the series."
+    )
 
 _GLOBAL_SYS = (
     "You are a SANS expert writing the Overview and Discussion of an EQSANS "
@@ -57,16 +76,34 @@ def _group_payload(gr: GroupReport) -> dict:
     }
 
 
-def observe_group(gr: GroupReport, llm: LLMClient | None) -> str:
+def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> str:
     if llm is None:
         return _deterministic_group_text(gr)
+
+    # 1) visually inspect the actual overlay plot (multimodal)
+    vision_note = ""
+    fig = next((f for f in gr.figures if f.label.endswith("_iq")), None)
+    if fig is None and gr.figures:
+        fig = gr.figures[0]
+    if fig is not None:
+        try:
+            vision_note = llm.chat_vision(
+                _OBS_VISION_SYS, _vision_question(gr, context), fig.path,
+                max_tokens=2000, cache_key=f"obsvis:{gr.group.group_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("group vision obs failed: %s", e)
+
+    # 2) write the observation from metrics + the visual description
+    payload = _group_payload(gr)
+    payload["experiment_context"] = context[:800]
+    payload["plot_observation"] = vision_note
     try:
-        return llm.chat(_GROUP_SYS, json.dumps(_group_payload(gr), default=str),
-                        max_tokens=600,
-                        cache_key=f"obs:{gr.group.group_id}:{len(gr.analyses)}")
+        return llm.chat(_GROUP_SYS, json.dumps(payload, default=str),
+                        max_tokens=2500,
+                        cache_key=f"obs:{gr.group.group_id}:{len(gr.analyses)}:v2")
     except Exception as e:  # noqa: BLE001
         logger.warning("group observation failed: %s", e)
-        return _deterministic_group_text(gr)
+        return vision_note or _deterministic_group_text(gr)
 
 
 def _deterministic_group_text(gr: GroupReport) -> str:
@@ -109,7 +146,7 @@ def global_narrative(
     }
     try:
         data = llm.chat_json(_GLOBAL_SYS, json.dumps(payload, default=str),
-                             max_tokens=3000,
+                             max_tokens=8000,
                              cache_key=f"global:{strategy.experiment_summary[:40]}:{len(group_reports)}")
     except Exception as e:  # noqa: BLE001
         logger.warning("global narrative failed: %s", e)

@@ -230,6 +230,7 @@ class SasFitOutcome:
     dataset_name: str = ""
     success: bool = False
     best: Optional[SasFitResult] = None
+    model_description: str = ""    # sasmodels description / equation of the chosen model
     rationale: str = ""           # why this model was chosen
     critique: str = ""            # final critic assessment
     attempts: list = field(default_factory=list)  # [{model, reduced_chisq, verdict, note}]

@@ -121,7 +121,28 @@ def fit_curve(
     try:
         experiment = Experiment(data=data, model=model)
         problem = FitProblem(experiment)
+        # Stage 1: fast local fit.
         bumps_fit(problem, method="lm", steps=steps, verbose=False)
+        chisq1 = _safe_chisq(problem)
+        snap1 = {p: getattr(model, p).value for p in fitted}
+        # Stage 2: if the local fit is poor or a parameter is pinned at a bound,
+        # it is likely stuck in a local minimum — do a GLOBAL search (differential
+        # evolution) then refine locally, and keep whichever is better.
+        if _poor_fit(chisq1, model, fitted):
+            try:
+                bumps_fit(problem, method="de", steps=max(steps, 200), verbose=False)
+                bumps_fit(problem, method="lm", steps=steps, verbose=False)
+                chisq2 = _safe_chisq(problem)
+                if not (chisq2 < chisq1):  # global+refine not better -> restore local
+                    for p, v in snap1.items():
+                        getattr(model, p).value = v
+                    res.note = "global search did not improve local fit"
+                else:
+                    res.note = "global search (DE) used to escape local minimum"
+            except Exception as e:  # noqa: BLE001
+                logger.debug("global fit stage failed: %s", e)
+                for p, v in snap1.items():
+                    getattr(model, p).value = v
     except Exception as e:  # noqa: BLE001
         res.note = f"fit failed: {e}"
         return res
@@ -153,6 +174,30 @@ def fit_curve(
 
     res.ok = True
     return res
+
+
+def _safe_chisq(problem):
+    try:
+        return float(problem.chisq())
+    except Exception:  # noqa: BLE001
+        return float("inf")
+
+
+def _poor_fit(chisq, model, fitted, *, chisq_thresh: float = 2.0, eps: float = 1e-3) -> bool:
+    """A fit is 'poor' if reduced chi^2 is high or a fitted parameter is pinned to
+    a bound (a classic sign of a local-minimum / bad-start failure)."""
+    if chisq is None or not np.isfinite(chisq) or chisq > chisq_thresh:
+        return True
+    for p in fitted:
+        par = getattr(model, p, None)
+        try:
+            lo, hi = par.bounds.limits
+            v = par.value
+            if hi > lo and (abs(v - lo) <= eps * (hi - lo) or abs(hi - v) <= eps * (hi - lo)):
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
 
 
 def _default_range(par):

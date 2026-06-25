@@ -40,7 +40,9 @@
 \subsection{<< gr.title >>}
 <% if gr.description %><< gr.description >>
 
-<% endif %><% if gr.observations %><< gr.observations >>
+<% endif %><% if gr.figures %>The reduced data for this group are shown in Figure~\ref{<< gr.figures[0].label >>}.
+<% endif %>
+<% if gr.observations %><< gr.observations >>
 
 <% endif %>
 <% for fig in gr.figures %>
@@ -70,10 +72,17 @@ accepted or rejected it. Both successful and unsuccessful outcomes are reported.
 \subsection{<< s.title >>}
 \textbf{Selected model:} << s.model >> \quad \textbf{Status:} << s.status >> <% if s.chisq != '—' %>\quad ($\chi^2_\nu$ = << s.chisq >>)<% endif %>
 
+<% if s.model_description %>\emph{Model:} << s.model_description >>
+
+<% endif %>
+<% if s.fitted_fixed %><< s.fitted_fixed >>
+
+<% endif %>
 <% if s.rationale %>\emph{Model choice:} << s.rationale >>
 
 <% endif %>
 <% if s.figure %>
+The representative fit is shown in Figure~\ref{<< s.figure.label >>}.
 \begin{figure}[H]
   \centering
   \includegraphics[width=<< s.figure.width >>]{<< s.figure.path >>}
@@ -89,6 +98,7 @@ accepted or rejected it. Both successful and unsuccessful outcomes are reported.
 <% if s.member_table %><< render_table(s.member_table) >>
 <% endif %>
 <% if s.trend_figure %>
+The trend of the key parameter across the series is shown in Figure~\ref{<< s.trend_figure.label >>}.
 \begin{figure}[H]
   \centering
   \includegraphics[width=<< s.trend_figure.width >>]{<< s.trend_figure.path >>}

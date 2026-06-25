@@ -116,9 +116,12 @@ def run_report(
     runner = Runner(datasets, out_dir / "figures")
     group_reports = runner.run(strategy)
 
-    # 7) per-group observations
+    # 7) per-group observations (grounded in the actual plot + experiment context)
+    obs_context = strategy.experiment_summary
+    if proposal and proposal.science_goals:
+        obs_context += " Goals: " + "; ".join(proposal.science_goals)
     for gr in group_reports:
-        gr.observations = synthesize.observe_group(gr, llm)
+        gr.observations = synthesize.observe_group(gr, llm, context=obs_context)
 
     # 7b) agentic model-based fitting (sasmodels) — opt-in
     sas_outcomes = []

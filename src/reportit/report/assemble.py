@@ -161,11 +161,26 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
                          "caption": L.escape_keep_math(o.trend_figure.caption),
                          "label": o.trend_figure.label, "width": "0.7\\textwidth"}
         member_table = _member_fit_table(o)
+        # fitted vs fixed parameter breakdown
+        fitted_fixed = ""
+        if o.best:
+            fitted = ", ".join(o.best.params.keys())
+            fixed = ", ".join(f"{k}={_fmt(v)}" for k, v in (o.best.fixed or {}).items())
+            window = ""
+            if o.best.fit_qmin is not None and o.best.q_excluded:
+                window = (f" Fitted over Q=[{_fmt(o.best.fit_qmin)}, "
+                          f"{_fmt(o.best.fit_qmax)}] (excluding {len(o.best.q_excluded)} "
+                          "out-of-range points).")
+            fitted_fixed = (f"Fitted parameters: {L.escape(fitted)}. "
+                            + (f"Fixed: {L.escape(fixed)}. " if fixed else "")
+                            + L.escape(window))
         sections.append({
             "title": L.escape(o.label or o.group_id),
             "status": "Accepted" if o.success else "No satisfactory model found",
             "success": o.success,
             "model": L.escape(o.best.model_name) if o.best else "—",
+            "model_description": L.escape_keep_math((o.model_description or "")[:600]),
+            "fitted_fixed": fitted_fixed,
             "chisq": _fmt(o.best.reduced_chisq, 3) if (o.best and o.best.reduced_chisq) else "—",
             "rationale": L.escape_keep_math(o.rationale),
             "critique": L.escape_keep_math(o.critique),
