@@ -182,6 +182,47 @@ def plot_fit(result, out_path: Path, *, title: str = "") -> Path | None:
     return out_path
 
 
+def plot_group_fits(group_label: str, items: list, out_path: Path) -> Path | None:
+    """Overlay every member's fit in one log-log plot: data as markers, fitted
+    model as a line (one color per member). items = [(condition_label, SasFitResult)].
+    """
+    items = [(lbl, r) for lbl, r in items
+             if r is not None and r.ok and len(r.q) and len(r.i_model) == len(r.q)]
+    if len(items) < 1:
+        return None
+    cmap = plt.get_cmap("viridis")
+    n = len(items)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for k, (lbl, r) in enumerate(items):
+        color = cmap(k / max(n - 1, 1))
+        q = np.asarray(r.q, float)
+        yd = np.asarray(r.i_data, float)
+        ym = np.asarray(r.i_model, float)
+        m = (q > 0) & (yd > 0) & np.isfinite(q) & np.isfinite(yd)
+        ax.plot(q[m], yd[m], "o", ms=3, fillstyle="none", color=color, label=str(lbl))
+        mm = (q > 0) & (ym > 0) & np.isfinite(q) & np.isfinite(ym)
+        ax.plot(q[mm], ym[mm], "-", lw=1.5, color=color)
+        # faint excluded (out-of-window) points for context
+        qe = np.asarray(getattr(r, "q_excluded", []), float)
+        ye = np.asarray(getattr(r, "i_excluded", []), float)
+        if qe.size and ye.size:
+            me = (qe > 0) & (ye > 0) & np.isfinite(qe) & np.isfinite(ye)
+            ax.plot(qe[me], ye[me], "x", ms=3, color=color, alpha=0.35)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel(r"Q ($\mathrm{\AA}^{-1}$)")
+    ax.set_ylabel(r"I(Q) (cm$^{-1}$)")
+    ax.set_title(group_label)
+    if n <= 14:
+        ax.legend(fontsize=7, framealpha=0.7, title="markers=data, lines=fit")
+    ax.grid(True, which="major", alpha=0.2)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path
+
+
 def plot_trend(label: str, param: str, points: list, out_path: Path,
                *, xlabel: str = "condition", numeric_x: bool = True) -> Path | None:
     """Plot a fitted parameter vs condition (e.g. Rg vs temperature).

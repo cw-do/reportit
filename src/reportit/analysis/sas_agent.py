@@ -231,8 +231,9 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
     primary = _primary_param(cand, model_name)
     out.trend_param = primary or ""
     fits = []
+    results = []  # (condition_label, SasFitResult) for the combined overlay plot
     for ds in members:
-        path = ds.merged_path or ds.iq_path
+        path = ds.merged_path or ds.iq_path  # always prefer merged
         if not path or not Path(path).is_file():
             continue
         try:
@@ -249,14 +250,36 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
         if not r.ok:
             continue
         cond_val = _temp_value(ds.temperature)
+        cond_label = ds.temperature or "RT"
+        results.append((cond_label, r))
         fits.append({
             "name": ds.output_name,
-            "condition": ds.temperature or "RT",
+            "condition": cond_label,
             "condition_val": cond_val,
             "params": r.params, "uncertainties": r.uncertainties,
             "reduced_chisq": r.reduced_chisq,
         })
+    # order by condition (temperature) so the table and plot progress sensibly;
+    # room-temperature ("RT", no numeric value) sorts first.
+    def _ord(v):
+        return v if v is not None else -1e9
+    fits.sort(key=lambda f: _ord(f["condition_val"]))
+    results.sort(key=lambda lr: _ord(_temp_value(lr[0])))
     out.member_fits = fits
+
+    # Combined plot: ALL member fits in one figure (data markers + model lines).
+    if len(results) >= 2:
+        cfig = fig_dir / f"sasfit_{_safe(group.group_id)}_allfits.png"
+        made = figures.plot_group_fits(
+            f"{group.label}: {model_name} fits (all members)", results, cfig)
+        if made:
+            from ..models import FigureRef
+            out.figure = FigureRef(
+                path=made,
+                caption=(f"Fits of all members of {group.label} to the {model_name} "
+                         f"model (markers: data, lines: fitted model; faint x: points "
+                         f"excluded from the fit window)."),
+                label=f"fig:sasfit_{_safe(group.group_id)}")
 
     # trend figure for the primary parameter
     if primary and len(fits) >= 2:

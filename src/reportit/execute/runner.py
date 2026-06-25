@@ -61,8 +61,10 @@ class Runner:
     def run(self, strategy: AnalysisStrategy) -> list[GroupReport]:
         variants = strategy.variant_decision.variants_used or ["output"]
         compare = strategy.variant_decision.compare and len(variants) > 1
-        # honor the LLM's curve_source decision (combined/individual/auto)
-        prefer_merged = strategy.curve_source != "individual"
+        # ALWAYS prefer merged (extended-Q) profiles for plotting and fitting;
+        # overlay_iq falls back to the single-configuration curve per-dataset only
+        # when no merged/combined file exists for that sample+condition.
+        prefer_merged = True
         fit_by_group = {fp.group_id: fp for fp in strategy.fit_plans}
 
         reports: list[GroupReport] = []
