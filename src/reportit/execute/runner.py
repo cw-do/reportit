@@ -132,7 +132,9 @@ def _safe(s: str) -> str:
 
 
 def _iq_caption(group, compare: bool) -> str:
-    base = f"Log-log I(Q) for {group.label}."
+    base = (f"Log-log I(Q) for {group.label}. Merged (extended-Q) profiles "
+            "combining both detector configurations are shown where available "
+            "(legend gives the merged filename); otherwise single-configuration data.")
     if group.ordering_key:
         base += f" Ordered by {group.ordering_key}."
     if compare:

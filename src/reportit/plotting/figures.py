@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import matplotlib
@@ -32,6 +33,14 @@ def _curve_path(ds: Dataset, prefer_merged: bool) -> Path | None:
     return ds.iq_path
 
 
+def _legend_label(merged_path) -> str:
+    """Legend label for a merged curve = its filename core (e.g. 15_30C_4m10a_2.5m2.5a)."""
+    stem = Path(merged_path).name
+    stem = re.sub(r"^merged_", "", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"_Iq\.\w+$", "", stem, flags=re.IGNORECASE)
+    return stem
+
+
 def overlay_iq(
     group_label: str,
     members: list[Dataset],
@@ -44,11 +53,16 @@ def overlay_iq(
 ) -> Path | None:
     """Log-log overlay of I(Q) for a group's members. Returns out_path or None."""
     plotted = 0
+    seen_paths: set[str] = set()
     fig, ax = plt.subplots(figsize=(7, 5))
     for idx, ds in enumerate(members):
         path = _curve_path(ds, prefer_merged)
         if not path or not Path(path).is_file():
             continue
+        rp = str(Path(path).resolve())
+        if rp in seen_paths:  # same merged file shared by two configs — plot once
+            continue
+        seen_paths.add(rp)
         try:
             iq = load_iq(path)
         except Exception as e:  # noqa: BLE001
@@ -58,9 +72,10 @@ def overlay_iq(
         mask = (q > 0) & (i > 0) & np.isfinite(q) & np.isfinite(i)
         if mask.sum() < 2:
             continue
-        label = ds.output_name
+        is_merged = bool(ds.merged_path) and Path(path) == Path(ds.merged_path)
+        label = _legend_label(path) if is_merged else ds.output_name
         if compare_variants:
-            label = f"{ds.output_name} [{ds.variant}]"
+            label = f"{label} [{ds.variant}]"
         ls = "-" if ds.variant.endswith("mask4") or not compare_variants else "--"
         ax.plot(q[mask], i[mask], marker=_MARKERS[idx % len(_MARKERS)],
                 markersize=3, linewidth=1, linestyle=ls, fillstyle="none", label=label)
