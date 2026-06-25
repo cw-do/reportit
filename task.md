@@ -55,11 +55,32 @@ Status legend: [x] done · [~] partial · [ ] todo
       hypothesis assessment, discussion
 - [x] 2D `I(Qx,Qy)` plotting path
 
+## Tables + fitting improvements (user feedback round 1)
+- [x] Split Sample Summary (sample/description/configs/conditions) from run tables
+- [x] Appendix: landscape Reduction Run Table (scatt/trans per config + bkg/empty)
+- [x] Appendix: ONCat Run Catalog (run/title/distance/wavelength/counts/duration)
+- [x] Ornstein-Zernike correlation-length fit; LLM-chosen fit model; low-Q outlier trim
+- [x] Fix pdflatex output utf-8 decode crash
+
+## Agentic sasmodels fitting (user feedback round 2)
+- [x] `--sasfit` mode: model-select (glm-5.2) -> bumps fit -> critic (gemini vision
+      + glm reasoning) -> iterate -> report success/failure
+- [x] `analysis/sascatalog.py` (catalog from sasmodels), `sasfit.py` (bumps fit),
+      `sas_agent.py` (the loop)
+- [x] Hybrid models: reasoning=z-ai/glm-5.2, vision=google/gemini-3.5-flash
+- [x] Partial-Q-range fitting (exclude low-Q aggregation; critic accepts
+      limited-range fits); excluded points drawn faintly
+- [x] chat_json retries same model w/ correction on malformed JSON (+ trailing-comma
+      strip); per-call model override has fallback chain
+- [x] Report "Model-Based Fitting (sasmodels)" section + summary table
+
 ## Backlog / possible improvements
 - [ ] Compute group metrics on the merged extended-Q curve (table q-max currently
       reflects the single-config member, not the merged curve used in the figure)
-- [ ] Optionally cover the remaining ungrouped samples (banjo, pb30.*, D2O, ...)
-      or note them explicitly as out-of-scope in the report
-- [ ] `--variant` override flag for users who want to force a specific output dir
-- [ ] Unit tests + ruff in CI
-- [ ] Per-group LLM calls run sequentially; could parallelize for speed
+- [ ] Cover remaining ungrouped samples (banjo, pb30.*, D2O, ...) or note as out-of-scope
+- [ ] `--variant` override flag to force a specific output dir
+- [ ] Per-dataset (not just per-group representative) sasmodels fitting + trend tables
+      (e.g. Rg vs temperature) once a model is accepted
+- [ ] Parameter uncertainties: bumps `lm` returns stderr=0; run a DREAM/MCMC pass
+      for error bars on accepted fits
+- [ ] Unit tests + ruff in CI; parallelize per-group LLM calls for speed

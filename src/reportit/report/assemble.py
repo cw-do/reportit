@@ -135,10 +135,10 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
     for o in model.sas_fits:
         params_table = None
         if o.best and o.best.params:
-            rows = []
+            rows = []  # render_table escapes cells — do not pre-escape here
             for p, v in o.best.params.items():
                 unc = (o.best.uncertainties or {}).get(p, 0) or 0
-                rows.append([L.escape(p), _fmt(v), _fmt(unc) if unc else "—"])
+                rows.append([p, _fmt(v), _fmt(unc) if unc else "—"])
             params_table = TableSpec(
                 caption=f"Fitted parameters for the {L.escape(o.best.model_name)} model.",
                 label=f"tab:sas_{_safe(o.group_id)}",
@@ -146,7 +146,7 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
                 fontsize="small")
         attempts = "; ".join(
             f"{L.escape(a.get('model',''))} ("
-            f"{'accepted' if a.get('verdict')=='accept' else a.get('verdict','?')}"
+            f"{'accepted' if a.get('verdict')=='accept' else L.escape(str(a.get('verdict','?')).replace('_',' '))}"
             + (f", $\\chi^2_\\nu$={_fmt(a.get('reduced_chisq'),3)}" if a.get('reduced_chisq') else "")
             + ")"
             for a in o.attempts)
@@ -174,11 +174,11 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
 def _build_sas_summary(model: ReportModel) -> dict | None:
     if not model.sas_fits:
         return None
-    rows = []
+    rows = []  # render_table escapes cells — pass raw text
     for o in model.sas_fits:
         rows.append([
-            L.escape(o.label or o.group_id),
-            L.escape(o.best.model_name) if o.best else "—",
+            o.label or o.group_id,
+            o.best.model_name if o.best else "—",
             _fmt(o.best.reduced_chisq, 3) if (o.best and o.best.reduced_chisq) else "—",
             "yes" if o.success else "no",
         ])

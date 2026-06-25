@@ -68,10 +68,32 @@ Copy `.env.example` to `.env` and set the OpenRouter key (used for all LLM steps
 
 ```
 OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=google/gemini-3.5-flash
+OPENROUTER_MODEL=google/gemini-3.5-flash            # strategy + narrative
+OPENROUTER_REASONING_MODEL=z-ai/glm-5.2             # model selection / fit critique
+OPENROUTER_VISION_MODEL=google/gemini-3.5-flash     # visually inspect fit plots
 ```
 
 The `.env` is gitignored — never commit it.
+
+## Model-based fitting (`--sasfit`)
+
+`reportit 38533 --sasfit` adds an agentic, sasmodels-based fitting stage. Per
+sample group it runs a multi-agent loop:
+
+1. a **reasoning agent** (glm-5.2) selects candidate SasView/sasmodels models and
+   a parameter plan (initial guesses, which params to fit vs fix, bounds, and an
+   optional Q-window) from the curve shape + proposal context;
+2. each candidate is fit with **bumps** (`sasmodels` + `bumps`);
+3. a **critic** judges it — a multimodal model (gemini) visually inspects the
+   fit-vs-data plot, and the reasoning model evaluates χ², residuals, and
+   parameter sanity — then accepts or rejects and the loop iterates;
+4. the report's "Model-Based Fitting" section shows the chosen model, fitted
+   parameters, the fit figure, and the critic's verdict — **including honest
+   failures**.
+
+Partial-Q-range fits are first-class: a low-Q upturn (aggregation / large-scale
+structure outside the length scale of interest) can be excluded so the model is
+fit only over the regime it applies to; excluded points are shown faintly.
 
 ## CLI options
 
@@ -82,6 +104,7 @@ The `.env` is gitignored — never commit it.
 | `--no-llm` | deterministic mode: heuristic grouping, no LLM reasoning |
 | `--no-proposal` | ignore the proposal PDF(s) |
 | `--refresh` | bust caches (re-query ONCat / re-run LLM) |
+| `--sasfit` | run agentic sasmodels model-based fitting per group (see below) |
 | `--max-llm-steps N` | cap on agentic strategy tool-calling steps (default 40) |
 | `-v, --verbose` | verbose logging (shows each strategy probe) |
 
