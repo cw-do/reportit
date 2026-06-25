@@ -20,8 +20,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_MAX_CHARS = 24000
-_PER_DOC_CHARS = 12000
+# generous — the models have large context windows; don't starve the selector
+_MAX_CHARS = 200000
+_PER_DOC_CHARS = 120000
 _cache: str | None = None
 
 

@@ -146,7 +146,7 @@ def run_group_fit(
     try:
         plan = llm.chat_json(_SELECT_SYS,
                              _select_prompt(experiment_context, group.label, feats, catalog),
-                             model=reasoning, max_tokens=4000,
+                             model=reasoning, max_tokens=8000,
                              cache_key=f"sasselect:{group.group_id}:{rep.output_name}")
     except Exception as e:  # noqa: BLE001
         out.critique = f"Model selection failed: {e}"
@@ -310,14 +310,14 @@ def _critique(llm, reasoning, label, result, vision_note, context) -> dict:
         "fitted_q_window": [result.fit_qmin, result.fit_qmax],
         "n_points_excluded_low_or_high_q": len(result.q_excluded),
         "visual_assessment": vision_note,
-        "experiment_context": context[:1500],
+        "experiment_context": context[:8000],
     }
     sys = _CRITIC_SYS + (
         '\nReturn JSON: {"accept": bool, "quality": "good|fair|poor", '
         '"assessment": <2-3 sentence verdict>, "issues": [<strings>]}.')
     try:
         return llm.chat_json(sys, json.dumps(payload, default=str),
-                             model=reasoning, max_tokens=1200,
+                             model=reasoning, max_tokens=4000,
                              cache_key=f"sascritic:{label}:{result.model_name}:{round(result.reduced_chisq or 0,2)}")
     except Exception as e:  # noqa: BLE001
         logger.warning("critic failed: %s", e)

@@ -41,7 +41,7 @@ _OBS_VISION_SYS = (
 
 def _vision_question(gr, context: str) -> str:
     return (
-        f"Experiment context: {context[:800]}\n"
+        f"Experiment context: {context[:6000]}\n"
         f"This plot is: {gr.group.label} (a {gr.group.kind}). "
         "Describe what the overlaid I(Q) curves show and how they differ across the series."
     )
@@ -95,7 +95,7 @@ def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> 
 
     # 2) write the observation from metrics + the visual description
     payload = _group_payload(gr)
-    payload["experiment_context"] = context[:800]
+    payload["experiment_context"] = context[:6000]
     payload["plot_observation"] = vision_note
     try:
         return llm.chat(_GROUP_SYS, json.dumps(payload, default=str),

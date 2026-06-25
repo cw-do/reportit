@@ -153,7 +153,7 @@ class LLMClient:
     # multimodal: inspect an image (e.g. a fit-vs-data plot)
     # ------------------------------------------------------------------ #
     def chat_vision(self, system: str, user: str, image_path, *,
-                    model: Optional[str] = None, max_tokens: int = 1500,
+                    model: Optional[str] = None, max_tokens: int = 4000,
                     cache_key: Optional[str] = None) -> str:
         import base64
         from pathlib import Path as _P
@@ -202,7 +202,7 @@ class LLMClient:
         *,
         finalize_tool: str,
         max_steps: int = 30,
-        max_tokens: int = 4000,
+        max_tokens: int = 8000,
         on_step: Optional[Callable[[int, str, dict], None]] = None,
         cache_key: Optional[str] = None,
     ) -> dict:
@@ -296,7 +296,7 @@ class LLMClient:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": _truncate(json.dumps(result, default=str), 12000),
+                    "content": _truncate(json.dumps(result, default=str), 120000),
                 })
 
             if finalized is not None:

@@ -61,7 +61,9 @@ class Probes:
 
     def _t_read_text(self, args: dict) -> Any:
         p = self._resolve(args["path"])
-        max_bytes = int(args.get("max_bytes") or 6000)
+        # generous default — these models have large context windows, so don't
+        # truncate normal files (NOTE.md, scripts, JSONs are all well under this)
+        max_bytes = int(args.get("max_bytes") or 120000)
         if not p.is_file():
             return {"error": f"not a file: {p}"}
         try:
@@ -72,7 +74,7 @@ class Probes:
 
     def _t_head_file(self, args: dict) -> Any:
         p = self._resolve(args["path"])
-        n = int(args.get("n") or 15)
+        n = int(args.get("n") or 60)
         if not p.is_file():
             return {"error": f"not a file: {p}"}
         lines = []

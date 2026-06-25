@@ -32,15 +32,15 @@ PROBE_TOOLS = [
         {"path": {"type": "string", "description": "Path relative to the shared dir, or absolute within it."}},
         ["path"]),
     _fn("read_text",
-        "Read up to max_bytes of a text file (NOTE.md, README, a .py reduction "
-        "script, a .txt). Use to understand what was done.",
+        "Read a text file (NOTE.md, README, a .py reduction script, a .txt) — by "
+        "default the whole file (up to ~120k chars). Use to understand what was done.",
         {"path": {"type": "string"},
-         "max_bytes": {"type": "integer", "description": "default 6000"}},
+         "max_bytes": {"type": "integer", "description": "default 120000 (whole file)"}},
         ["path"]),
     _fn("head_file",
         "Return the first N lines of a (possibly large) data file — e.g. to see "
         "the header/columns of an _Iq.dat or _Iqxqy.dat.",
-        {"path": {"type": "string"}, "n": {"type": "integer", "description": "default 15"}},
+        {"path": {"type": "string"}, "n": {"type": "integer", "description": "default 60"}},
         ["path"]),
     _fn("parse_reduction_json",
         "Parse a per-sample reduction config .json into structured fields "

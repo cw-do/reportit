@@ -33,7 +33,7 @@ def _prompt(text: str, sample_bases: list[str]) -> str:
         "infer to a short description).\n\n"
         f"The reduced-data sample base names found on disk are: {sample_bases}. "
         "Map descriptions to these where you can; abbreviations are common.\n\n"
-        "=== PROPOSAL TEXT ===\n" + text[:48000]
+        "=== PROPOSAL TEXT ===\n" + text[:300000]
     )
 
 
@@ -44,7 +44,7 @@ def summarize(pdf_paths: list[Path], llm: LLMClient | None) -> ProposalInfo:
         logger.info("No extractable proposal text.")
         return info
     if llm is None:
-        info.abstract_summary = text[:1500]
+        info.abstract_summary = text[:8000]
         return info
 
     try:
@@ -52,7 +52,7 @@ def summarize(pdf_paths: list[Path], llm: LLMClient | None) -> ProposalInfo:
                              cache_key=f"proposal:{','.join(p.name for p in pdf_paths)}")
     except Exception as e:  # noqa: BLE001
         logger.warning("Proposal summarization failed: %s", e)
-        info.abstract_summary = text[:1500]
+        info.abstract_summary = text[:8000]
         return info
 
     info.title = data.get("title")

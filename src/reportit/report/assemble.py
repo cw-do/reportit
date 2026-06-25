@@ -179,7 +179,7 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             "status": "Accepted" if o.success else "No satisfactory model found",
             "success": o.success,
             "model": L.escape(o.best.model_name) if o.best else "—",
-            "model_description": L.escape_keep_math((o.model_description or "")[:600]),
+            "model_description": L.escape_keep_math((o.model_description or "")[:2000]),
             "fitted_fixed": fitted_fixed,
             "chisq": _fmt(o.best.reduced_chisq, 3) if (o.best and o.best.reduced_chisq) else "—",
             "rationale": L.escape_keep_math(o.rationale),
