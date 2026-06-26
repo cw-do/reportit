@@ -22,29 +22,31 @@ logger = logging.getLogger(__name__)
 _GROUP_SYS = (
     "You are a SANS expert writing a QUALITATIVE results subsection for one group of "
     "EQSANS measurements (no model fitting in this section — that comes later). "
-    "Given the group's metadata, descriptive metrics, and a visual description of "
-    "the actual I(Q) overlay, write 3-6 sentences that (a) describe what the plot "
-    "shows and how the curves differ across the series (temperature/concentration), "
-    "and (b) offer careful physical interpretation and hypotheses. Be nuanced: a "
-    "single power-law slope can have MULTIPLE meanings (e.g. -1 rod, -5/3 swollen "
-    "chain, -2 ideal chain or flat sheet, -4 sharp interface; a low-Q upturn may be "
-    "aggregation, a network/large-scale correlation, or genuine large-object "
-    "scattering) — present the plausible options rather than asserting one. Note "
-    "that the high-Q flat region is the incoherent background, and the 1-2 "
-    "lowest-Q points may be beam-stop/mask artifacts. Tie observations to the "
-    "experiment's goals/hypotheses. Ground every statement in the plot. No markdown, "
-    "no headings — just prose."
+    "Given the group's metadata and a visual description of the actual I(Q) "
+    "overlay, write 3-6 sentences that (a) describe what the plot shows and how the "
+    "curves differ across the series (temperature/concentration), and (b) offer "
+    "careful physical interpretation and hypotheses. "
+    "IMPORTANT: do NOT quote specific power-law slope numbers — a slope depends "
+    "strongly on the Q-range chosen and that quantitative work belongs to the later "
+    "fitting section. Describe shape QUALITATIVELY instead (steeper/shallower, a "
+    "plateau, a knee, a low-Q upturn, a peak, curves shifting up/down or crossing "
+    "over). Be nuanced about meaning: a low-Q upturn may be aggregation, a network/"
+    "large-scale correlation, or genuine large-object scattering — present options "
+    "rather than asserting one. Note the high-Q flat region is the incoherent "
+    "background and the 1-2 lowest-Q points may be beam-stop/mask artifacts. Tie "
+    "observations to the experiment's goals. Ground every statement in the plot. "
+    "No markdown, no headings — just prose."
 )
 
 _OBS_VISION_SYS = (
     "You are a SANS expert visually inspecting a log-log I(Q) overlay plot for a "
-    "group of related samples. Describe concretely what you SEE: overall shape and "
-    "Q-dependence, approximate power-law slope(s) and where they apply, any low-Q "
-    "plateau/upturn, peaks or knees, the high-Q flat (incoherent background) level, "
-    "and — importantly — how the curves differ across the series (shift up/down, "
-    "change slope, move a feature, cross over?). Flag the 1-2 lowest-Q points if "
-    "they look like masking artifacts. Be specific and quantitative where possible, "
-    "but do not over-interpret a slope into a single cause."
+    "group of related samples. Describe concretely what you SEE QUALITATIVELY: the "
+    "overall shape, any low-Q plateau/upturn, peaks or knees, the high-Q flat "
+    "(incoherent background) level, and — importantly — how the curves differ "
+    "across the series (shift up/down, get steeper/shallower, move a feature, cross "
+    "over?). Flag the 1-2 lowest-Q points if they look like masking artifacts. Do "
+    "NOT quote specific numerical power-law slopes — they depend on the Q-range and "
+    "are handled later by fitting; describe steepness in relative, qualitative terms."
 )
 
 
@@ -73,13 +75,11 @@ def _group_payload(gr: GroupReport) -> dict:
         "kind": gr.group.kind,
         "description": gr.group.description,
         "ordering_key": gr.group.ordering_key,
-        "metrics": [
-            {"name": a.output_name, "variant": a.variant, "n": a.n_points,
-             "q_min": a.q_min, "q_max": a.q_max,
-             "low_q_slope": a.low_q_slope, "high_q_slope": a.high_q_slope,
-             "fit": ({"kind": a.fit.kind, "params": a.fit.params,
-                      "r2": a.fit.r_squared} if a.fit and a.fit.ok else None),
-             "flags": a.flags}
+        # Q-range/point count only — NO precomputed slopes (they depend on the
+        # unstated Q-range and would invite misleading slope claims here).
+        "datasets": [
+            {"name": a.output_name, "variant": a.variant, "n_points": a.n_points,
+             "q_min": a.q_min, "q_max": a.q_max, "flags": a.flags}
             for a in gr.analyses
         ],
     }
@@ -116,12 +116,13 @@ def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> 
 
 
 def _deterministic_group_text(gr: GroupReport) -> str:
+    # Qualitative/descriptive only — no slopes (they depend on the Q-range used).
     parts = [f"{gr.group.label}: {len(gr.analyses)} dataset(s)."]
-    for a in gr.analyses[:6]:
-        seg = f" {a.output_name} spans Q in [{a.q_min:.3g}, {a.q_max:.3g}] 1/A"
-        if a.low_q_slope is not None:
-            seg += f", low-Q log-log slope ~ {a.low_q_slope:.2f}"
-        parts.append(seg + ".")
+    qs = [a.q_min for a in gr.analyses if a.q_min] + [a.q_max for a in gr.analyses if a.q_max]
+    if qs:
+        parts.append(f" Data span Q in [{min(qs):.3g}, {max(qs):.3g}] 1/A.")
+    parts.append(" See the overlaid I(Q) curves for the qualitative comparison "
+                 "across the series.")
     return "".join(parts)
 
 

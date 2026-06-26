@@ -136,26 +136,14 @@ def _iq_caption(group, compare: bool) -> str:
 def _metrics_table(group_id: str, analyses, fit) -> TableSpec | None:
     if not analyses:
         return None
-    headers = ["Dataset", "variant", "N", "Q min", "Q max", "low-Q slope", "high-Q slope"]
+    # Descriptive only — Q-range and point count. NO slopes here: a log-log slope
+    # depends strongly on the (unstated) Q-range used, so quoting it is misleading.
+    # Quantitative analysis belongs to the Model-Based Fitting section.
+    headers = ["Dataset", "variant", "N points", "Q min (1/A)", "Q max (1/A)"]
     rows = []
     for a in analyses:
         rows.append([
-            a.output_name, a.variant, str(a.n_points),
-            _fmt(a.q_min), _fmt(a.q_max), _fmt(a.low_q_slope, 3), _fmt(a.high_q_slope, 3),
+            a.output_name, a.variant, str(a.n_points), _fmt(a.q_min), _fmt(a.q_max),
         ])
-    caption = f"Per-dataset metrics for {group_id}."
-    if fit and fit.ok:
-        if fit.kind == "guinier":
-            caption += (f" Guinier fit: Rg={_fmt(fit.params.get('Rg'))} $\\mathrm{{\\AA}}$, "
-                        f"I0={_fmt(fit.params.get('I0'))} cm$^{{-1}}$ "
-                        f"(R²={_fmt(fit.r_squared)}).")
-        elif fit.kind == "correlation":
-            caption += (f" Ornstein-Zernike fit: correlation length "
-                        f"$\\xi$={_fmt(fit.params.get('xi'))} $\\mathrm{{\\AA}}$, "
-                        f"I0={_fmt(fit.params.get('I0'))} cm$^{{-1}}$ "
-                        f"(R²={_fmt(fit.r_squared)}).")
-        else:
-            caption += (f" {fit.kind} fit: exponent={_fmt(fit.params.get('exponent'))} "
-                        f"(R²={_fmt(fit.r_squared)}).")
-    return TableSpec(caption=caption, label=f"tab:{_safe(group_id)}",
-                     headers=headers, rows=rows)
+    return TableSpec(caption=f"Measured Q-range and point count for {group_id}.",
+                     label=f"tab:{_safe(group_id)}", headers=headers, rows=rows)
