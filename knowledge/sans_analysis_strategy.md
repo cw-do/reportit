@@ -96,9 +96,13 @@ Corroborate with the rest of the curve and the known chemistry. [Wei-Hore]
   known, fix them so P(Q) depends mainly on size + shape; let scale/background and
   the key shape parameters float. Don't float two coupled prefactors at once.
 - **Choose the Q-window deliberately**: exclude the low-Q aggregation upturn with
-  q_min (but never cut into the knee that sets the size); drop a flat
-  background-dominated high-Q tail with q_max. A model valid over a LIMITED Q-range
-  is still informative — state its range of validity.
+  q_min (but never cut into the knee that sets the size). The 1-2 LOWEST-Q points
+  are frequently beam-stop/mask artifacts — exclude them. A model valid over a
+  LIMITED Q-range is still informative — state its range of validity.
+- **Keep the high-Q plateau when you fit a background**: the flat high-Q level IS
+  the incoherent background. If `background` is a fitted parameter, do NOT cut
+  q_max short of that plateau (extend to ~0.4 A^-1 / the data end) or the
+  background — and hence the whole fit — will be poorly constrained.
 - **Background**: incoherent (H-rich) scattering is a flat B that must be MEASURED
   (blank/empty cell), not computed. Over/under-subtraction distorts the high-Q
   exponent → false fractal/Porod conclusions. Inspect subtracted data on a LINEAR

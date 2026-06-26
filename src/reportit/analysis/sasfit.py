@@ -27,6 +27,7 @@ def fit_curve(
     q_min: Optional[float] = None,
     q_max: Optional[float] = None,
     trim_low_q: bool = True,
+    drop_lowest: int = 1,
     steps: int = 300,
 ) -> SasFitResult:
     """Fit (q, i) to `model_name`, optionally over a restricted [q_min, q_max].
@@ -58,6 +59,17 @@ def fit_curve(
     q = np.asarray(q, float)
     i = np.asarray(i, float)
     dy = np.asarray(dy, float) if dy is not None else None
+    good = np.isfinite(q) & np.isfinite(i) & (q > 0)
+    q, i = q[good], i[good]
+    dy = dy[good] if dy is not None else dy
+    # drop the very lowest-Q point(s): the beam-stop/mask region is frequently an
+    # artifact in EQSANS merged data (general, not sample-specific).
+    if drop_lowest > 0 and q.size > drop_lowest + 6:
+        order = np.argsort(q)
+        q, i = q[order], i[order]
+        dy = dy[order] if dy is not None else None
+        q, i = q[drop_lowest:], i[drop_lowest:]
+        dy = dy[drop_lowest:] if dy is not None else None
     if trim_low_q:
         q, i, dy, _ = clean_low_q(q, i, dy)
     good = np.isfinite(q) & np.isfinite(i) & (q > 0)

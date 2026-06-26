@@ -133,17 +133,6 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
         return []
     sections = []
     for o in model.sas_fits:
-        params_table = None
-        if o.best and o.best.params:
-            rows = []  # render_table escapes cells — do not pre-escape here
-            for p, v in o.best.params.items():
-                unc = (o.best.uncertainties or {}).get(p, 0) or 0
-                rows.append([p, _fmt(v), _fmt(unc) if unc else "—"])
-            params_table = TableSpec(
-                caption=f"Fitted parameters for the {L.escape(o.best.model_name)} model.",
-                label=f"tab:sas_{_safe(o.group_id)}",
-                headers=["Parameter", "Value", "Uncertainty"], rows=rows,
-                fontsize="small")
         attempts = "; ".join(
             f"{L.escape(a.get('model',''))} ("
             f"{'accepted' if a.get('verdict')=='accept' else L.escape(str(a.get('verdict','?')).replace('_',' '))}"
@@ -185,7 +174,6 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             "rationale": L.escape_keep_math(o.rationale),
             "critique": L.escape_keep_math(o.critique),
             "attempts": attempts,
-            "params_table": params_table,
             "figure": fig,
             "trend_figure": trend_fig,
             "member_table": member_table,
@@ -195,26 +183,42 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
 
 
 def _member_fit_table(o):
-    """Per-member fit of the chosen model (the trend), e.g. one row per temperature."""
+    """Comprehensive per-member fit table: EVERY member, ALL fitted parameters
+    (value ± error), and reduced chi^2 — one table for the whole group."""
     fits = getattr(o, "member_fits", None) or []
-    primary = getattr(o, "trend_param", "") or ""
-    if len(fits) < 2 or not primary:
+    if len(fits) < 2:
         return None
+    # union of fitted parameter names, in a stable order
+    pnames: list[str] = []
+    for f in fits:
+        for p in (f.get("params") or {}):
+            if p not in pnames:
+                pnames.append(p)
+    if not pnames:
+        return None
+    headers = ["Member", "Condition"] + [f"{p} (±)" for p in pnames] + ["chi2_nu"]
     rows = []
     for f in fits:
-        val = (f.get("params") or {}).get(primary)
-        unc = (f.get("uncertainties") or {}).get(primary, 0) or 0
-        rows.append([
-            f.get("name", ""), str(f.get("condition", "")),
-            _fmt(val), _fmt(unc) if unc else "—",
-            _fmt(f.get("reduced_chisq"), 3),
-        ])
+        params = f.get("params") or {}
+        uncs = f.get("uncertainties") or {}
+        cells = [f.get("name", ""), str(f.get("condition", ""))]
+        for p in pnames:
+            v = params.get(p)
+            u = uncs.get(p, 0) or 0
+            cells.append(f"{_fmt(v)} ± {_fmt(u)}" if (v is not None and u) else _fmt(v))
+        cells.append(_fmt(f.get("reduced_chisq"), 3))
+        rows.append(cells)
+    # many parameters -> shrink font and go landscape so it fits
+    ncol = len(headers)
+    fontsize = "scriptsize" if ncol > 6 else "footnotesize"
+    landscape = ncol >= 7
     return TableSpec(
-        caption=f"Per-member fit of the chosen model across {o.label}: "
-                f"{primary} and reduced chi-squared for each dataset.",
+        caption=f"Fitted parameters of the {o.best.model_name if o.best else 'chosen'} "
+                f"model for every member of {o.label} (value ± uncertainty), with "
+                f"reduced chi-squared.",
         label=f"tab:trend_{_safe(o.group_id)}",
-        headers=["Dataset", "Condition", primary, f"d{primary}", "Reduced chi2"],
-        rows=rows, fontsize="small")
+        headers=headers, rows=rows,
+        longtable=landscape, landscape=landscape, fontsize=fontsize)
 
 
 def _build_sas_summary(model: ReportModel) -> dict | None:

@@ -20,22 +20,31 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 _GROUP_SYS = (
-    "You are a SANS expert writing the results subsection for one group of EQSANS "
-    "measurements. Given the group's metadata, per-dataset metrics, any fit, and a "
-    "visual description of the actual I(Q) overlay plot, write 2-4 sentences of "
-    "factual scientific observation: the shape/Q-dependence seen in the plot, how "
-    "the curves differ across the series (temperature/concentration), any peaks, "
-    "plateaus, low-Q upturns or power-law regions, and what it means in the "
-    "experiment's context. Ground statements in what the plot shows. No markdown, "
+    "You are a SANS expert writing a QUALITATIVE results subsection for one group of "
+    "EQSANS measurements (no model fitting in this section — that comes later). "
+    "Given the group's metadata, descriptive metrics, and a visual description of "
+    "the actual I(Q) overlay, write 3-6 sentences that (a) describe what the plot "
+    "shows and how the curves differ across the series (temperature/concentration), "
+    "and (b) offer careful physical interpretation and hypotheses. Be nuanced: a "
+    "single power-law slope can have MULTIPLE meanings (e.g. -1 rod, -5/3 swollen "
+    "chain, -2 ideal chain or flat sheet, -4 sharp interface; a low-Q upturn may be "
+    "aggregation, a network/large-scale correlation, or genuine large-object "
+    "scattering) — present the plausible options rather than asserting one. Note "
+    "that the high-Q flat region is the incoherent background, and the 1-2 "
+    "lowest-Q points may be beam-stop/mask artifacts. Tie observations to the "
+    "experiment's goals/hypotheses. Ground every statement in the plot. No markdown, "
     "no headings — just prose."
 )
 
 _OBS_VISION_SYS = (
     "You are a SANS expert visually inspecting a log-log I(Q) overlay plot for a "
     "group of related samples. Describe concretely what you SEE: overall shape and "
-    "Q-dependence, approximate power-law slopes, any low-Q plateau or upturn, peaks "
-    "or knees, and — importantly — how the curves differ from each other across the "
-    "series (do they shift up/down, change slope, move a feature?). Be specific."
+    "Q-dependence, approximate power-law slope(s) and where they apply, any low-Q "
+    "plateau/upturn, peaks or knees, the high-Q flat (incoherent background) level, "
+    "and — importantly — how the curves differ across the series (shift up/down, "
+    "change slope, move a feature, cross over?). Flag the 1-2 lowest-Q points if "
+    "they look like masking artifacts. Be specific and quantitative where possible, "
+    "but do not over-interpret a slope into a single cause."
 )
 
 

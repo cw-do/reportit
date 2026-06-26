@@ -164,14 +164,7 @@ def run_group_fit(
         model_name = cand.get("model")
         if not model_name:
             continue
-        result = sasfit.fit_curve(
-            iq.mod_q, iq.intensity, iq.error,
-            model_name=model_name,
-            initial=cand.get("initial") or {},
-            fit_params=cand.get("fit") or [],
-            bounds=cand.get("bounds") or {},
-            q_min=cand.get("q_min"), q_max=cand.get("q_max"),
-        )
+        result = _fit_cand(iq, cand, model_name)
         attempt = {"model": model_name, "ok": result.ok,
                    "reduced_chisq": result.reduced_chisq, "r2": result.r_squared,
                    "note": result.note, "params": result.params}
@@ -213,6 +206,14 @@ def run_group_fit(
         out.critique = out.critique or "All candidate fits failed."
         return out
 
+    # ONE critic-driven refinement: let the critic propose an improved fit window
+    # (e.g. exclude a few more low-Q points, extend high-Q to pin the background),
+    # then re-fit once and keep it if better. (Single iteration by design.)
+    try:
+        _refine_once(out, llm, reasoning, iq, best_cand, group, fig_dir, experiment_context)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("refine step failed for %s: %s", group.group_id, e)
+
     # model description / equation for the report
     det = sascatalog.model_detail(out.best.model_name)
     if det:
@@ -227,7 +228,92 @@ def run_group_fit(
     return out
 
 
+# --------------------------------------------------------------------------- #
+# fit policy + helpers
+# --------------------------------------------------------------------------- #
+def _fit_window(cand):
+    """(q_min, q_max) for a candidate. If 'background' is fitted, keep the high-Q
+    plateau (q_max=None) so the incoherent background is actually constrained."""
+    qmin = (cand or {}).get("q_min")
+    qmax = (cand or {}).get("q_max")
+    if "background" in [p.lower() for p in ((cand or {}).get("fit") or [])]:
+        qmax = None
+    return qmin, qmax
+
+
+def _fit_cand(iq, cand, model_name):
+    qmin, qmax = _fit_window(cand)
+    return sasfit.fit_curve(
+        iq.mod_q, iq.intensity, iq.error, model_name=model_name,
+        initial=(cand or {}).get("initial") or {},
+        fit_params=(cand or {}).get("fit") or [],
+        bounds=(cand or {}).get("bounds") or {},
+        q_min=qmin, q_max=qmax)
+
+
+def _member_condition(group, ds) -> str:
+    """Label a member by the group's INDEPENDENT VARIABLE, not a fixed field."""
+    kind = (group.kind or "").lower()
+    if "temperature" in kind:
+        return ds.temperature or "RT"
+    if "concentration" in kind:
+        return ds.base or ds.output_name           # sample id stands in for concentration
+    if "config" in kind:
+        return ds.config or ds.output_name
+    return ds.base or ds.output_name
+
+
+def _member_order(group, ds):
+    """Numeric ordering value for the trend x-axis (None => categorical)."""
+    if "temperature" in (group.kind or "").lower():
+        return _temp_value(ds.temperature)
+    return None
+
+
+def _refine_once(out, llm, reasoning, iq, best_cand, group, fig_dir, context) -> None:
+    """Single critic-suggested re-fit: propose a better window/exclusions, refit,
+    keep if it improves (lower chi^2 or newly acceptable)."""
+    cur = out.best
+    sys = (
+        "You are refining a SANS fit. Given the current model, fitted parameters, "
+        "reduced chi-squared, the fitted Q-window, and a visual assessment, propose "
+        "ONE improved fit setup. Common improvements: exclude a few more low-Q "
+        "beam-stop/artifact points (raise q_min), or EXTEND q_max to the high-Q "
+        "flat region so the incoherent background is constrained. "
+        'Return JSON {"q_min": number|null, "q_max": number|null, '
+        '"reason": string, "worth_refitting": bool}.')
+    payload = {"model": cur.model_name, "params": cur.params,
+               "reduced_chisq": cur.reduced_chisq,
+               "fitted_window": [cur.fit_qmin, cur.fit_qmax],
+               "critique": out.critique}
+    try:
+        sug = llm.chat_json(sys, json.dumps(payload, default=str), model=reasoning,
+                            max_tokens=2000,
+                            cache_key=f"sasrefine:{group.group_id}:{cur.model_name}")
+    except Exception:  # noqa: BLE001
+        return
+    if not sug.get("worth_refitting"):
+        return
+    cand2 = dict(best_cand or {})
+    if sug.get("q_min") is not None:
+        cand2["q_min"] = sug["q_min"]
+    if sug.get("q_max") is not None:
+        cand2["q_max"] = sug["q_max"]
+    r2 = _fit_cand(iq, cand2, cur.model_name)
+    if not r2.ok:
+        return
+    better = (r2.reduced_chisq or 9e9) < (cur.reduced_chisq or 9e9) * 0.98
+    if better:
+        fig2 = fig_dir / f"sasfit_{_safe(group.group_id)}_{_safe(cur.model_name)}_refined.png"
+        figures.plot_fit(r2, fig2, title=f"{group.label}: {cur.model_name} (refined)")
+        out.best = r2
+        out._best_cand = cand2  # stash for member fitting
+        out.critique += (f" Refit refined the window ({sug.get('reason','')[:160]}); "
+                         f"reduced chi^2 {cur.reduced_chisq:.2g} -> {r2.reduced_chisq:.2g}.")
+
+
 def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
+    cand = getattr(out, "_best_cand", None) or cand  # use refined window if any
     primary = _primary_param(cand, model_name)
     out.trend_param = primary or ""
     fits = []
@@ -238,19 +324,14 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
             continue
         try:
             iq = load_iq(path)
-            r = sasfit.fit_curve(
-                iq.mod_q, iq.intensity, iq.error, model_name=model_name,
-                initial=(cand or {}).get("initial") or {},
-                fit_params=(cand or {}).get("fit") or [],
-                bounds=(cand or {}).get("bounds") or {},
-                q_min=(cand or {}).get("q_min"), q_max=(cand or {}).get("q_max"))
+            r = _fit_cand(iq, cand, model_name)
         except Exception as e:  # noqa: BLE001
             logger.debug("member fit failed %s: %s", ds.output_name, e)
             continue
         if not r.ok:
             continue
-        cond_val = _temp_value(ds.temperature)
-        cond_label = ds.temperature or "RT"
+        cond_val = _member_order(group, ds)
+        cond_label = _member_condition(group, ds)
         results.append((cond_label, r))
         fits.append({
             "name": ds.output_name,
@@ -259,12 +340,17 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
             "params": r.params, "uncertainties": r.uncertainties,
             "reduced_chisq": r.reduced_chisq,
         })
-    # order by condition (temperature) so the table and plot progress sensibly;
-    # room-temperature ("RT", no numeric value) sorts first.
-    def _ord(v):
-        return v if v is not None else -1e9
-    fits.sort(key=lambda f: _ord(f["condition_val"]))
-    results.sort(key=lambda lr: _ord(_temp_value(lr[0])))
+    # order sensibly: numerically by condition value when available (temperature),
+    # else naturally by the condition label (sample id for concentration series).
+    def _natkey(s):
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(s))]
+
+    def _fkey(f):
+        return (0, f["condition_val"]) if f["condition_val"] is not None else (1, _natkey(f["condition"]))
+    fits.sort(key=_fkey)
+    cond_val = {f["name"]: f["condition_val"] for f in fits}
+    results.sort(key=lambda lr: (0, _temp_value(lr[0])) if _temp_value(lr[0]) is not None
+                 else (1, _natkey(lr[0])))
     out.member_fits = fits
 
     # Combined plot: ALL member fits in one figure (data markers + model lines).
@@ -291,7 +377,11 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
                    (f["uncertainties"] or {}).get(primary, 0), str(f["condition"]))
                   for f in src]
         if len(points) >= 2:
-            xlabel = "Temperature (C)" if use_numeric else "sample"
+            kind = (group.kind or "").lower()
+            if use_numeric:
+                xlabel = "Temperature (C)" if "temperature" in kind else "condition"
+            else:
+                xlabel = "Sample" if "concentration" in kind else "series member"
             fig_path = fig_dir / f"trend_{_safe(group.group_id)}_{_safe(primary)}.png"
             made = figures.plot_trend(group.label, primary, points, fig_path,
                                       xlabel=xlabel, numeric_x=use_numeric)

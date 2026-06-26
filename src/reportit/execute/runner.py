@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ..analysis import fit as fitmod
 from ..analysis import metrics as metricsmod
 from ..models import (
     AnalysisStrategy,
@@ -65,7 +64,6 @@ class Runner:
         # overlay_iq falls back to the single-configuration curve per-dataset only
         # when no merged/combined file exists for that sample+condition.
         prefer_merged = True
-        fit_by_group = {fp.group_id: fp for fp in strategy.fit_plans}
 
         reports: list[GroupReport] = []
         for g in strategy.groups:
@@ -75,33 +73,22 @@ class Runner:
                 continue
 
             gr = GroupReport(group=g)
-            # metrics for each member
+            # descriptive metrics only — NO model fitting in this section. Section 2
+            # is purely the data + qualitative observations; all model fitting lives
+            # in the Model-Based Fitting section.
             for ds in members:
                 if ds.iq_path:
                     gr.analyses.append(metricsmod.analyze(ds.output_name, ds.variant, ds.iq_path))
 
-            # fit (on a representative member: prefer one with merged extended-Q)
-            fit_result = None
-            fp = fit_by_group.get(g.group_id)
             rep_idx = self._representative_index(members)
-            if fp and fp.should_fit and fp.model:
-                rep = members[rep_idx]
-                path = rep.merged_path or rep.iq_path
-                if path:
-                    try:
-                        fit_result = fitmod.run_fit(path, fp.model, fp.q_min, fp.q_max)
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning("fit failed for %s: %s", g.group_id, e)
-                    if fit_result and fit_result.ok and gr.analyses:
-                        gr.analyses[rep_idx].fit = fit_result
 
-            # 1D overlay figure
+            # 1D overlay figure (data only, merged extended-Q, no fit curve)
             if g.comparison in ("iq1d", "both"):
                 fig_path = self.fig_dir / f"{_safe(g.group_id)}_iq.png"
                 made = figures.overlay_iq(
                     g.label, members, fig_path,
                     compare_variants=compare, prefer_merged=prefer_merged,
-                    fit=fit_result, fit_member_index=rep_idx,
+                    fit=None,
                 )
                 if made:
                     gr.figures.append(FigureRef(
@@ -119,7 +106,7 @@ class Runner:
                         caption=f"2D scattering I($Q_x$,$Q_y$) for {rep.output_name}.",
                         label=f"fig:{_safe(g.group_id)}_2d"))
 
-            gr.table = _metrics_table(g.group_id, gr.analyses, fit_result)
+            gr.table = _metrics_table(g.group_id, gr.analyses, None)
             reports.append(gr)
         return reports
 
