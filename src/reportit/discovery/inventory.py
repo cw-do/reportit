@@ -17,7 +17,26 @@ from . import scan
 logger = logging.getLogger(__name__)
 
 # Directories we never descend into (huge / irrelevant).
-_SKIP_DIRS = {".reportit_cache", "__pycache__", ".git", ".ipynb_checkpoints"}
+_SKIP_DIRS = {".reportit_cache", "reportit_out", "__pycache__", ".git",
+              ".ipynb_checkpoints"}
+
+# Files that mark a directory as a reportit output (so we skip our own reports).
+_OUTPUT_MARKERS = ("report_comprehensive.tex", "report_summary.tex",
+                   "report_comprehensive.pdf", ".reportit_cache")
+
+
+def is_reportit_output_dir(p: Path) -> bool:
+    """True if a directory is (or contains) a reportit-generated report — so the
+    folder scan / strategy agent never reads its own prior output."""
+    try:
+        if p.name in ("reportit_out", ".reportit_cache"):
+            return True
+        for m in _OUTPUT_MARKERS:
+            if (p / m).exists():
+                return True
+    except OSError:
+        pass
+    return False
 
 _IQ1D_RE = re.compile(r"_Iq\.dat$", re.IGNORECASE)
 _IQ2D_RE = re.compile(r"_Iqxqy\.(dat|h5)$", re.IGNORECASE)
@@ -58,7 +77,8 @@ def _build_tree_text(root: Path, max_depth: int = 3, max_entries: int = 40) -> s
     lines: list[str] = []
     root = root.resolve()
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS
+                             and not is_reportit_output_dir(Path(dirpath) / d))
         rel = Path(dirpath).resolve().relative_to(root)
         depth = 0 if str(rel) == "." else len(rel.parts)
         if depth > max_depth:
@@ -81,7 +101,8 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
 
     entries: list[FileEntry] = []
     for dirpath, dirnames, filenames in os.walk(shared_dir):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS
+                       and not is_reportit_output_dir(Path(dirpath) / d)]
         for fn in filenames:
             p = Path(dirpath) / fn
             try:

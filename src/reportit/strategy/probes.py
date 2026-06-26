@@ -35,7 +35,21 @@ class Probes:
         p = p.resolve()
         if self.shared_dir not in p.parents and p != self.shared_dir:
             raise ValueError(f"Path escapes shared dir: {path}")
+        if self._in_output(p):
+            raise ValueError(f"Path is inside a reportit output directory: {path}")
         return p
+
+    def _in_output(self, p: Path) -> bool:
+        """True if p is within a reportit-generated report dir (so the agent never
+        reads its own prior output). Checks p and parents down to the shared dir."""
+        from ..discovery.inventory import is_reportit_output_dir
+        d = p
+        while True:
+            if d.is_dir() and is_reportit_output_dir(d):
+                return True
+            if d == self.shared_dir or self.shared_dir not in d.parents:
+                return False
+            d = d.parent
 
     # -- dispatch --------------------------------------------------------- #
     def dispatch(self, name: str, args: dict) -> Any:
@@ -49,8 +63,11 @@ class Probes:
         p = self._resolve(args["path"])
         if not p.is_dir():
             return {"error": f"not a directory: {p}"}
+        from ..discovery.inventory import is_reportit_output_dir
         out = []
         for child in sorted(p.iterdir())[:200]:
+            if child.is_dir() and is_reportit_output_dir(child):
+                continue  # hide reportit's own output directories
             try:
                 size = child.stat().st_size
             except OSError:
