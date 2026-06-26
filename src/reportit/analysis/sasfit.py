@@ -107,10 +107,17 @@ def fit_curve(
     init = {k: v for k, v in initial.items() if k in valid}
     # Data-driven incoherent-background initial guess: match the high-Q plateau
     # BEFORE fitting (correlation-length & similar fits are very sensitive to it).
-    if "background" in valid:
-        bkg0 = _estimate_background(q_all, i_all)
-        if bkg0 is not None:
-            init["background"] = bkg0
+    bounds = dict(bounds)
+    bkg0 = _estimate_background(q_all, i_all) if "background" in valid else None
+    if bkg0 is not None and bkg0 > 0:
+        init["background"] = bkg0
+        # anchor the background near the measured high-Q plateau: tight,
+        # data-driven bounds (overriding any LLM guess) so the fit locks the
+        # incoherent level instead of letting other parameters compensate.
+        bounds["background"] = [0.3 * bkg0, 2.0 * bkg0]
+    # seed the amplitude/size parameters from the data so weak signals on a high
+    # background are not collapsed by a far-off start (general, not per-sample).
+    _seed_from_data(q, i, bkg0, fit_params, valid, init)
     try:
         model = Model(kernel, **init)
     except Exception as e:  # noqa: BLE001
@@ -168,16 +175,31 @@ def fit_curve(
         res.note = f"fit failed: {e}"
         return res
 
-    # extract values + uncertainties
+    # extract values
     for p in fitted:
-        par = getattr(model, p)
-        res.params[p] = float(par.value)
-        res.uncertainties[p] = float(getattr(par, "stderr", 0.0) or 0.0)
+        res.params[p] = float(getattr(model, p).value)
     for p in valid:
         if p not in fitted:
             par = getattr(model, p, None)
             if par is not None and hasattr(par, "value"):
                 res.fixed[p] = float(par.value)
+
+    # parameter uncertainties from the fit covariance (lm/de don't fill stderr) +
+    # flag any parameter pinned at a bound (a sign the fit is unreliable).
+    try:
+        cov = problem.cov(problem.getp())
+        errs = np.sqrt(np.abs(np.diag(np.asarray(cov, float))))
+        labels = list(problem.labels())
+        for lab, se in zip(labels, errs):
+            key = lab.split(".")[-1]
+            if key in res.params and np.isfinite(se):
+                res.uncertainties[key] = float(se)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("covariance/uncertainty estimate failed: %s", e)
+    pinned = _pinned_params(model, fitted)
+    if pinned:
+        res.note = (res.note + "; " if res.note else "") + \
+            "parameter(s) at bound: " + ", ".join(pinned)
 
     try:
         i_model = experiment.theory()
@@ -210,15 +232,70 @@ def fit_curve(
     return res
 
 
-def _estimate_background(q, i):
-    """Estimate the flat incoherent background from the high-Q plateau."""
+_AMP_PARAMS = ("i_zero", "lorentz_scale", "scale", "gauss_scale", "intensity")
+_SIZE_PARAMS = ("rg", "cor_length", "correlation_length", "radius", "length", "rg_1")
+
+
+def _seed_from_data(q, i, bkg, fit_params, valid, init):
+    """Data-driven starting guesses for amplitude- and size-like parameters:
+    amplitude ≈ low-Q excess above background; size ≈ 1/Q_knee (where the excess
+    falls to half). Only used as a starting point; the fit still refines."""
     q = np.asarray(q, float)
     i = np.asarray(i, float)
-    m = np.isfinite(q) & np.isfinite(i) & (q > 0)
+    m = np.isfinite(q) & np.isfinite(i) & (q > 0) & (i > 0)
+    q, i = q[m], i[m]
+    if q.size < 6:
+        return
+    order = np.argsort(q)
+    q, i = q[order], i[order]
+    b = bkg if (bkg is not None and bkg > 0) else float(np.median(i[int(0.8 * len(i)):]))
+    excess = float(max(np.median(i[:max(3, len(i) // 20)]) - b, 1e-4))
+    half = b + excess / 2.0
+    below = q[i <= half]
+    knee = float(below[0]) if below.size else float(q[len(q) // 3])
+    size = float(1.0 / knee) if knee > 0 else None
+    for p in fit_params:
+        if p not in valid or p in init:   # only fill what the caller didn't set
+            continue
+        pl = p.lower()
+        if pl in _AMP_PARAMS:
+            init[p] = excess
+        elif pl in _SIZE_PARAMS and size is not None:
+            init[p] = size
+
+
+def _pinned_params(model, fitted, eps: float = 1e-3) -> list:
+    """Names of fitted parameters sitting at (within eps of) a bound."""
+    out = []
+    for p in fitted:
+        par = getattr(model, p, None)
+        try:
+            lo, hi = par.bounds.limits
+            v = par.value
+            if hi > lo and (abs(v - lo) <= eps * (hi - lo) or abs(hi - v) <= eps * (hi - lo)):
+                out.append(p)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def _estimate_background(q, i):
+    """Estimate the flat incoherent background from the high-Q plateau.
+
+    Select by Q VALUE (the top of the Q range), not by point count — SANS data is
+    dense at low Q, so a count-based quantile would bleed into mid-Q and badly
+    overestimate. The incoherent level is the asymptotic floor at the highest Q.
+    """
+    q = np.asarray(q, float)
+    i = np.asarray(i, float)
+    m = np.isfinite(q) & np.isfinite(i) & (q > 0) & (i > 0)
     q, i = q[m], i[m]
     if q.size < 8:
         return None
-    hi = q >= np.quantile(q, 0.8)        # highest ~20% in Q = the plateau region
+    qmax = q.max()
+    hi = q >= 0.8 * qmax                   # top 20% of the Q RANGE by value
+    if hi.sum() < 3:
+        hi = q >= 0.6 * qmax
     vals = i[hi]
     vals = vals[np.isfinite(vals)]
     if vals.size == 0:

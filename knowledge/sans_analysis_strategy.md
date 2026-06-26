@@ -127,11 +127,19 @@ Hard-won lessons that apply to ANY experiment — follow this sequence:
    sensitive to the background start — getting it wrong throws the whole curve
    off. If the model line sits visibly above/below the high-Q data, the
    background is wrong; fix it and refit.
-2. **Set the fit window deliberately.** Exclude the 1–2 LOWEST-Q points (beam-stop
-   / mask artifacts) and any low-Q aggregation upturn with q_min — but never cut
-   into the knee that sets the size. KEEP the high-Q plateau (extend q_max to the
-   data end, ~0.4 Å⁻¹) whenever `background` is a free parameter, or it won't be
-   constrained.
+2. **Set the fit window deliberately — the low-Q decision is MODEL- and
+   SHAPE-dependent.** Always drop the 1–2 lowest-Q beam-stop/mask artifact points.
+   Then decide what a low-Q rise IS:
+   - If there is a clear mid-Q Lorentzian roll-off / knee AND a separate, steeper
+     upturn at the very lowest Q, that upturn is aggregation/large-scale structure
+     — exclude it with q_min (but don't cut into the knee).
+   - If the low-Q rise IS the main feature (e.g. a weak scatterer that is nearly
+     flat at the incoherent background with only a gentle low-Q rise), then for an
+     Ornstein–Zernike / `correlation_length` / Lorentzian model that rise is the
+     correlation feature itself — INCLUDE it (use a WIDE range with a low q_min)
+     so the model can capture it; excluding it leaves nothing to fit.
+   Always KEEP the high-Q plateau (extend q_max to the data end, ~0.4 Å⁻¹) when
+   `background` is free, or the background won't be constrained.
 3. **Seed the other parameters from data features.** Rg or ξ ≈ 1/Q_knee; scale
    from the low-Q level; shape/fractal exponent from the high-Q slope. Fix what
    the data can't constrain.
