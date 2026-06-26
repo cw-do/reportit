@@ -36,11 +36,18 @@ Always work on dilute data first so S(Q) doesn't confound the form factor.
 - **`polymer_excl_volume`**: swollen chain, fits Rg and Flory exponent ν (valid
   ν∈0.3–0.8; good solvent ≈0.6). High-Q → Q^(−1/ν); fractal dim D=1/ν. Use a thin
   rod instead as ν→1. [Wei-Hore]
-- **`correlation_length`** (Ornstein–Zernike + Porod): `A/Q^n + C/(1+(Qξ)^D) + B`
-  → correlation/mesh length ξ. The right choice for **semidilute solutions, gels,
-  networks** when a single-chain model misses the shape. Pure Lorentzian
-  `C/(1+(Qξ)²)+B` (D=2) is the simplest version; `gauss_lorentz_gel` adds a second
-  (static) length. [Wei-Hore, Hammouda]
+- **`correlation_length`** (Ornstein–Zernike + Porod):
+  `I = porod_scale/Q^porod_exp + lorentz_scale/(1+(Qξ)^lorentz_exp) + background`.
+  Two physical terms: the **Porod term** (`porod_scale/Q^porod_exp`) captures a
+  **low-Q UPTURN / large-scale structure**, and the **Lorentzian term**
+  (`lorentz_scale`, `cor_length` ξ) captures the **correlation/mesh** feature. The
+  right choice for semidilute solutions, gels, networks. **How to fit it (general):
+  FIX `lorentz_exp = 2` (standard OZ) and FIT `porod_scale, porod_exp,
+  lorentz_scale, cor_length, background` together.** This model CAN fit a low-Q
+  upturn — it is just a matter of balancing `lorentz_scale` vs `porod_scale` (the
+  Porod term absorbs the upturn, the Lorentzian the mid-Q roll-off). So you usually
+  do NOT need to exclude the upturn for this model — fit a wide Q-range. If there
+  is no upturn, `porod_scale` simply fits to ~0. [Wei-Hore, Hammouda]
 - **`cylinder` / `flexible_cylinder`**: rods, fibers, semiflexible chains,
   bottlebrush backbones. Q⁻¹ (length) then Q⁻⁴ (cross-section). Rg²=L²/12+R²/2. [Hammouda, Wei-Hore]
 - **`sphere` / `core_shell_sphere` / `ellipsoid`**: compact particles, micelles,
@@ -127,19 +134,18 @@ Hard-won lessons that apply to ANY experiment — follow this sequence:
    sensitive to the background start — getting it wrong throws the whole curve
    off. If the model line sits visibly above/below the high-Q data, the
    background is wrong; fix it and refit.
-2. **Set the fit window deliberately — the low-Q decision is MODEL- and
-   SHAPE-dependent.** Always drop the 1–2 lowest-Q beam-stop/mask artifact points.
-   Then decide what a low-Q rise IS:
-   - If there is a clear mid-Q Lorentzian roll-off / knee AND a separate, steeper
-     upturn at the very lowest Q, that upturn is aggregation/large-scale structure
-     — exclude it with q_min (but don't cut into the knee).
-   - If the low-Q rise IS the main feature (e.g. a weak scatterer that is nearly
-     flat at the incoherent background with only a gentle low-Q rise), then for an
-     Ornstein–Zernike / `correlation_length` / Lorentzian model that rise is the
-     correlation feature itself — INCLUDE it (use a WIDE range with a low q_min)
-     so the model can capture it; excluding it leaves nothing to fit.
-   Always KEEP the high-Q plateau (extend q_max to the data end, ~0.4 Å⁻¹) when
-   `background` is free, or the background won't be constrained.
+2. **Set the fit window deliberately — the low-Q decision is MODEL-dependent.**
+   Always drop the 1–2 lowest-Q beam-stop/mask artifact points, and always KEEP the
+   high-Q plateau (extend q_max to the data end, ~0.4 Å⁻¹) when `background` is free.
+   Then, for the low-Q rise:
+   - If the model has a low-Q power-law / Porod TERM (e.g. `correlation_length` has
+     `porod_scale/Q^porod_exp`; Beaucage/unified models), DON'T exclude the upturn —
+     fit the FULL Q-range and let that term absorb the upturn while the other term
+     (Lorentzian/Guinier) captures the feature. This reliably fits low-Q-upturn
+     curves; it's just a matter of balancing the two amplitudes.
+   - If the model has only ONE feature term (single-chain `mono_gauss_coil`,
+     Guinier, a sphere/ellipsoid form factor), it CANNOT represent an extra low-Q
+     upturn — exclude the aggregation upturn with q_min (without cutting the knee).
 3. **Seed the other parameters from data features.** Rg or ξ ≈ 1/Q_knee; scale
    from the low-Q level; shape/fractal exponent from the high-Q slope. Fix what
    the data can't constrain.

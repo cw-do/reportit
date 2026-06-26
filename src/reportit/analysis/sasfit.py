@@ -18,6 +18,34 @@ from .clean import clean_low_q
 logger = logging.getLogger(__name__)
 
 
+# Knowledge-based fit setups for key models (the LLM's plan is augmented with
+# these so a well-known model is fit correctly even if the plan is incomplete).
+_MODEL_FIT_HINTS = {
+    # The Porod term (porod_scale/q^porod_exp) captures a low-Q upturn; the
+    # Lorentzian (lorentz_scale, cor_length) the correlation. Fix lorentz_exp=2.
+    "correlation_length": {
+        "fit": ["porod_scale", "porod_exp", "lorentz_scale", "cor_length", "background"],
+        "fix": {"lorentz_exp": 2.0},
+    },
+}
+
+
+def _apply_model_hints(model_name, fit_params, initial):
+    """Augment the fit plan for a known model: ensure the right parameters are
+    fitted and the conventionally-fixed ones are fixed."""
+    hint = _MODEL_FIT_HINTS.get(model_name)
+    if not hint:
+        return list(fit_params)
+    fixed = hint.get("fix", {})
+    fit = [p for p in fit_params if p not in fixed]
+    for p in hint.get("fit", []):
+        if p not in fit and p not in fixed:
+            fit.append(p)
+    for p, v in fixed.items():
+        initial.setdefault(p, v)
+    return fit
+
+
 def fit_curve(
     q, i, dy=None, *,
     model_name: str,
@@ -41,9 +69,10 @@ def fit_curve(
     fit_params: list of parameters to optimize (others stay fixed)
     bounds:     {param: [lo, hi]} optimization bounds for fitted parameters
     """
-    initial = initial or {}
+    initial = dict(initial or {})
     fit_params = fit_params or []
     bounds = bounds or {}
+    fit_params = _apply_model_hints(model_name, fit_params, initial)
 
     res = SasFitResult(model_name=model_name)
     try:
