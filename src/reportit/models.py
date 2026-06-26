@@ -216,6 +216,8 @@ class SasFitResult:
     i_model: list = field(default_factory=list)
     q_excluded: list = field(default_factory=list)  # data outside the fit window
     i_excluded: list = field(default_factory=list)
+    q_full: list = field(default_factory=list)      # all Q (fitted + excluded), sorted
+    i_model_full: list = field(default_factory=list)  # model evaluated over q_full
     fit_qmin: Optional[float] = None
     fit_qmax: Optional[float] = None
     ok: bool = False

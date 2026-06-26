@@ -318,10 +318,15 @@ def _fit_all_members(out, group, members, model_name, cand, fig_dir) -> None:
     out.trend_param = primary or ""
     fits = []
     results = []  # (condition_label, SasFitResult) for the combined overlay plot
+    seen_paths: set = set()
     for ds in members:
         path = ds.merged_path or ds.iq_path  # always prefer merged
         if not path or not Path(path).is_file():
             continue
+        rp = str(Path(path).resolve())
+        if rp in seen_paths:  # two configs share one merged file — fit it once
+            continue
+        seen_paths.add(rp)
         try:
             iq = load_iq(path)
             r = _fit_cand(iq, cand, model_name)

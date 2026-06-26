@@ -27,6 +27,29 @@ logger = logging.getLogger(__name__)
 _MARKERS = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h", "x", "+"]
 
 
+def _plot_model_line(ax, result, color, lw=1.7, label=None):
+    """Plot the fitted model: solid inside the fit window, dashed where it extends
+    beyond it (so the reader sees how the fit deviates outside the fitted range).
+    Falls back to the fitted-window model if no full-range curve is available."""
+    qf = np.asarray(getattr(result, "q_full", []), float)
+    mf = np.asarray(getattr(result, "i_model_full", []), float)
+    if qf.size == 0 or mf.size != qf.size:
+        qf = np.asarray(result.q, float)
+        mf = np.asarray(result.i_model, float)
+    pos = (qf > 0) & (mf > 0) & np.isfinite(qf) & np.isfinite(mf)
+    if pos.sum() < 2:
+        return
+    # full extent, dashed
+    ax.plot(qf[pos], mf[pos], "--", color=color, lw=lw * 0.85, alpha=0.75)
+    # in-window, solid (drawn on top of the dashed)
+    win = pos.copy()
+    if result.fit_qmin is not None:
+        win &= qf >= result.fit_qmin
+    if result.fit_qmax is not None:
+        win &= qf <= result.fit_qmax
+    ax.plot(qf[win], mf[win], "-", color=color, lw=lw, label=label)
+
+
 def _curve_path(ds: Dataset, prefer_merged: bool) -> Path | None:
     if prefer_merged and ds.merged_path and ds.merged_path.is_file():
         return ds.merged_path
@@ -154,7 +177,8 @@ def plot_fit(result, out_path: Path, *, title: str = "") -> Path | None:
                 label="excluded (out of fit range)")
     ax.errorbar(q[m], yd[m], fmt="o", ms=3, fillstyle="none",
                 color="tab:blue", label="data (fitted)")
-    ax.plot(q[m], ym[m], "-", lw=1.8, color="tab:red", label=f"{result.model_name} fit")
+    _plot_model_line(ax, result, "tab:red", lw=1.8,
+                     label=f"{result.model_name} fit (dashed = extrapolated)")
     if getattr(result, "fit_qmin", None) and qe.size:
         ax.axvline(result.fit_qmin, color="gray", ls=":", lw=0.8)
     ax.set_xscale("log")
@@ -200,8 +224,7 @@ def plot_group_fits(group_label: str, items: list, out_path: Path) -> Path | Non
         ym = np.asarray(r.i_model, float)
         m = (q > 0) & (yd > 0) & np.isfinite(q) & np.isfinite(yd)
         ax.plot(q[m], yd[m], "o", ms=3, fillstyle="none", color=color, label=str(lbl))
-        mm = (q > 0) & (ym > 0) & np.isfinite(q) & np.isfinite(ym)
-        ax.plot(q[mm], ym[mm], "-", lw=1.5, color=color)
+        _plot_model_line(ax, r, color, lw=1.5)  # solid in window, dashed outside
         # faint excluded (out-of-window) points for context
         qe = np.asarray(getattr(r, "q_excluded", []), float)
         ye = np.asarray(getattr(r, "i_excluded", []), float)

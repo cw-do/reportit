@@ -76,6 +76,9 @@ def fit_curve(
     q, i = q[good], i[good]
     dy = dy[good] if dy is not None else np.sqrt(np.abs(i) + 1e-12)
     dy = np.where(dy > 0, dy, np.sqrt(np.abs(i) + 1e-12))
+    order = np.argsort(q)
+    q, i, dy = q[order], i[order], dy[order]
+    q_all, i_all = q.copy(), i.copy()  # full curve (for plotting the model beyond the fit window)
 
     # restrict to the requested fit window; keep excluded points for context
     in_win = np.ones(q.shape, dtype=bool)
@@ -102,6 +105,12 @@ def fit_curve(
     valid = {p.name for p in kernel.info.parameters.kernel_parameters}
     valid |= {"scale", "background"}
     init = {k: v for k, v in initial.items() if k in valid}
+    # Data-driven incoherent-background initial guess: match the high-Q plateau
+    # BEFORE fitting (correlation-length & similar fits are very sensitive to it).
+    if "background" in valid:
+        bkg0 = _estimate_background(q_all, i_all)
+        if bkg0 is not None:
+            init["background"] = bkg0
     try:
         model = Model(kernel, **init)
     except Exception as e:  # noqa: BLE001
@@ -179,6 +188,19 @@ def fit_curve(
     except Exception as e:  # noqa: BLE001
         logger.debug("theory eval failed: %s", e)
 
+    # evaluate the fitted model over the FULL Q range so the report can show the
+    # model extended (dashed) beyond the fitted window.
+    try:
+        from sasmodels.direct_model import DirectModel
+        allp = {**res.fixed, **res.params}
+        dm = DirectModel(Data1D(x=q_all, y=np.ones_like(q_all),
+                                dy=np.ones_like(q_all)), kernel)
+        i_full = dm(**allp)
+        res.q_full = [float(v) for v in q_all]
+        res.i_model_full = [float(v) for v in i_full]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("full-range model eval failed: %s", e)
+
     try:
         res.reduced_chisq = float(problem.chisq())
     except Exception:  # noqa: BLE001
@@ -186,6 +208,22 @@ def fit_curve(
 
     res.ok = True
     return res
+
+
+def _estimate_background(q, i):
+    """Estimate the flat incoherent background from the high-Q plateau."""
+    q = np.asarray(q, float)
+    i = np.asarray(i, float)
+    m = np.isfinite(q) & np.isfinite(i) & (q > 0)
+    q, i = q[m], i[m]
+    if q.size < 8:
+        return None
+    hi = q >= np.quantile(q, 0.8)        # highest ~20% in Q = the plateau region
+    vals = i[hi]
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return None
+    return float(max(np.median(vals), 0.0))
 
 
 def _safe_chisq(problem):
