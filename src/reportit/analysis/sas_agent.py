@@ -274,12 +274,14 @@ def _refine_once(out, llm, reasoning, iq, best_cand, group, fig_dir, context) ->
     """Single critic-suggested re-fit: propose a better window/exclusions, refit,
     keep if it improves (lower chi^2 or newly acceptable)."""
     cur = out.best
+    kb = knowledge.load_knowledge()
+    kb_block = f"\n\nReference SANS knowledge:\n{kb}\n" if kb else ""
     sys = (
         "You are refining a SANS fit. Given the current model, fitted parameters, "
         "reduced chi-squared, the fitted Q-window, and a visual assessment, propose "
         "ONE improved fit setup. Common improvements: exclude a few more low-Q "
         "beam-stop/artifact points (raise q_min), or EXTEND q_max to the high-Q "
-        "flat region so the incoherent background is constrained. "
+        "flat region so the incoherent background is constrained. " + kb_block +
         'Return JSON {"q_min": number|null, "q_max": number|null, '
         '"reason": string, "worth_refitting": bool}.')
     payload = {"model": cur.model_name, "params": cur.params,
@@ -430,7 +432,9 @@ def _critique(llm, reasoning, label, result, vision_note, context) -> dict:
         "visual_assessment": vision_note,
         "experiment_context": context[:8000],
     }
-    sys = _CRITIC_SYS + (
+    kb = knowledge.load_knowledge()
+    kb_block = f"\n\nReference SANS knowledge:\n{kb}\n" if kb else ""
+    sys = _CRITIC_SYS + kb_block + (
         '\nReturn JSON: {"accept": bool, "quality": "good|fair|poor", '
         '"assessment": <2-3 sentence verdict>, "issues": [<strings>]}.')
     try:

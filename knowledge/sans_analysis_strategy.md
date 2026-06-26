@@ -116,7 +116,48 @@ Corroborate with the rest of the curve and the known chemistry. [Wei-Hore]
   Porod), multiple scattering (keep transmission >60%), and resolution smearing
   (reduces apparent Rg, softens dips).
 
-## 6. Q ↔ length-scale intuition
+## 6. Practical fitting workflow (use this order, every time)
+
+Hard-won lessons that apply to ANY experiment — follow this sequence:
+
+1. **Match the incoherent background FIRST.** The flat high-Q level IS the
+   incoherent background. Read it off the high-Q plateau (≈ the median of the
+   highest ~20% in Q) and use it as the INITIAL background before fitting.
+   Ornstein–Zernike / `correlation_length` and Lorentzian fits are extremely
+   sensitive to the background start — getting it wrong throws the whole curve
+   off. If the model line sits visibly above/below the high-Q data, the
+   background is wrong; fix it and refit.
+2. **Set the fit window deliberately.** Exclude the 1–2 LOWEST-Q points (beam-stop
+   / mask artifacts) and any low-Q aggregation upturn with q_min — but never cut
+   into the knee that sets the size. KEEP the high-Q plateau (extend q_max to the
+   data end, ~0.4 Å⁻¹) whenever `background` is a free parameter, or it won't be
+   constrained.
+3. **Seed the other parameters from data features.** Rg or ξ ≈ 1/Q_knee; scale
+   from the low-Q level; shape/fractal exponent from the high-Q slope. Fix what
+   the data can't constrain.
+4. **Fit, then look — judge by eye.** If the model line is clearly off the data
+   ANYWHERE inside its claimed window, the fit is bad regardless of χ². χ²_R→1 is
+   ideal, χ²_R≪1 is overfit. A parameter pinned at a bound = wrong
+   model/window/start. Residuals must be random, not systematic.
+5. **Escape local minima.** A far-off start traps local optimizers; if the local
+   fit is poor or a parameter hits a bound, run a global search (differential
+   evolution) then refine locally.
+6. **Refine once if warranted.** If residuals are systematic at low or high Q,
+   adjust the window (drop a few more low-Q points, or extend high-Q for the
+   background) and refit one more time; keep it only if it genuinely improves.
+7. **Always extrapolate the model beyond the fit window (dashed) when plotting.**
+   It shows where and how the model breaks down outside its range — e.g. a
+   single-chain/OZ model under-predicting a low-Q aggregation upturn is exactly
+   the diagnostic a reader needs.
+8. **A limited-range fit is valid and informative** — state its range of validity
+   and attribute the out-of-range deviation (aggregation, large-scale structure,
+   background) rather than forcing one model across the whole curve.
+
+When in doubt about whether to fit at all: data + a careful QUALITATIVE
+description (shape, trends across the series, plausible interpretations — a slope
+has several possible meanings) is often more honest than a forced model fit.
+
+## 7. Q ↔ length-scale intuition
 
 Small Q → large length scales, large Q → small. Periodic spacing d≈2π/Q_peak;
 diffuse correlation/size ≈1/Q (Guinier knee at Q≈1/Rg). Decade map: below 1/Rg =
