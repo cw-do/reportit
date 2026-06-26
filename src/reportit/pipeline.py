@@ -109,6 +109,12 @@ def run_report(
                                       max_steps=steps, on_step=_log_step)
     ctx.degraded.extend(strategy.caveats)
 
+    # Guardrail: merged/combined extended-Q profiles are always preferred. If the
+    # chosen variant(s) lack them but another variant has them, restrict the
+    # analysis to the merged-bearing variant(s). Only fall back to a variant
+    # without merged when NO variant has any (then per-config curves are correct).
+    _enforce_merged_variant(strategy, datasets, ctx)
+
     if strategy_only:
         _print_strategy(strategy)
         return RunResult(out_dir, [], [], strategy, ctx)
@@ -222,6 +228,29 @@ def _title(ctx, proposal) -> str:
     if proposal and proposal.title:
         return f"EQSANS IPTS-{ctx.ipts}: {proposal.title}"
     return f"EQSANS Experiment Report — IPTS-{ctx.ipts}"
+
+
+def _enforce_merged_variant(strategy, datasets, ctx) -> None:
+    """Keep the analysis on variants that actually have merged extended-Q data."""
+    merged_by_variant: dict[str, int] = {}
+    for d in datasets:
+        if d.merged_path:
+            merged_by_variant[d.variant] = merged_by_variant.get(d.variant, 0) + 1
+    if not merged_by_variant:
+        return  # no variant has merged anywhere — per-config curves are correct
+    chosen = list(strategy.variant_decision.variants_used or [])
+    keep = [v for v in chosen if merged_by_variant.get(v, 0) > 0]
+    if not keep:
+        best = max(merged_by_variant, key=merged_by_variant.get)
+        keep = [best]
+    if keep != chosen:
+        msg = (f"Restricted analysis to variant(s) with merged extended-Q profiles "
+               f"{keep} (chosen {chosen or 'none'} lacked them).")
+        logger.info(msg)
+        ctx.degraded.append(msg)
+        strategy.variant_decision.variants_used = keep
+        if len(keep) < 2:
+            strategy.variant_decision.compare = False
 
 
 def _dedupe(items) -> list[str]:

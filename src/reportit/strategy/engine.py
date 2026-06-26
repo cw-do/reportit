@@ -41,7 +41,11 @@ before deciding. Typical useful steps:
 Key decisions you must ground in evidence, not assumptions:
   - If there are multiple output directories (e.g. output vs output_mask4 with \
 different detector masks), decide which to use, or whether to compare them, and \
-WHY (read NOTE.md and compare).
+WHY (read NOTE.md and compare). STRONGLY prefer a variant that HAS combined/merged \
+extended-Q profiles (see the per-output-dir coverage in the inventory) — a variant \
+with only per-config 1D files and no merged data gives much worse plots and fits, \
+so do not pick it when a merged-bearing variant exists. Do not compare a \
+merged-bearing variant against one that lacks merged data.
   - Decide curve_source: do combined/stitched 1D profiles exist (see the \
 inventory's combined-files list — names vary: merged_*, *_stitched, etc.)? If so, \
 prefer 'combined' (extended Q from joining configurations). If there are NONE, use \

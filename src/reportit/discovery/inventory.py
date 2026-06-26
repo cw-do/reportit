@@ -134,6 +134,15 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
     # Combined/stitched 1D profiles (naming varies — merged/stitched/etc.).
     combined_examples = sorted({e.path.name for e in entries if e.kind == "combined"})[:20]
 
+    # Per output-dir coverage: how many 1D and combined files each has.
+    variant_summary = []
+    for od in output_dirs:
+        n_iq = sum(1 for e in entries if e.kind == "iq1d" and e.path.parent == od)
+        n_comb = sum(1 for e in entries if e.kind == "combined" and e.path.parent == od)
+        variant_summary.append(
+            f"{od.name}: {n_iq} per-config 1D, {n_comb} combined/merged "
+            + ("(has extended-Q)" if n_comb else "(NO combined — per-config only)"))
+
     tree_text = _build_tree_text(shared_dir)
 
     return FolderInventory(
@@ -148,6 +157,7 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
         note_files=note_files,
         naming_examples=naming_examples,
         combined_examples=combined_examples,
+        variant_summary=variant_summary,
         total_files=len(entries),
     )
 

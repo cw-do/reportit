@@ -34,6 +34,7 @@ class FolderInventory:
     note_files: list[Path]
     naming_examples: list[str]  # representative output names
     combined_examples: list[str] = field(default_factory=list)  # merged/stitched 1D files
+    variant_summary: list[str] = field(default_factory=list)  # per output dir: 1D + combined counts
     total_files: int = 0
 
     def as_text(self) -> str:
@@ -71,6 +72,10 @@ class FolderInventory:
             *block("Combined/stitched 1D profiles (merged extended-Q; naming varies "
                    "— may be 'merged', 'stitched', etc.; EMPTY means none exist):",
                    self.combined_examples),
+            "",
+            *block("Per output-dir data coverage (PREFER a variant that HAS combined "
+                   "extended-Q profiles — they are essential for analysis):",
+                   self.variant_summary),
         ]
         return "\n".join(lines)
 
