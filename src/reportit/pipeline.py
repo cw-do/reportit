@@ -55,7 +55,9 @@ def run_report(
 ) -> RunResult:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    cache = Cache(out_dir / ".reportit_cache", enabled=not refresh or True)
+    # --refresh busts ALL caches (LLM, strategy, sasfit, proposal, ONCat): every
+    # read misses and recomputes, then rewrites the cache for next time.
+    cache = Cache(out_dir / ".reportit_cache", enabled=True, bust=refresh)
 
     settings = AppSettings.load()
     steps = max_llm_steps or settings.max_llm_steps

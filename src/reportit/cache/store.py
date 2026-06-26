@@ -23,9 +23,13 @@ def md5(*parts: str) -> str:
 
 
 class Cache:
-    def __init__(self, root: Path, enabled: bool = True):
+    def __init__(self, root: Path, enabled: bool = True, bust: bool = False):
+        # bust=True (from --refresh): ignore existing entries (every get() misses)
+        # but still WRITE fresh results, so this run recomputes everything and the
+        # cache is repopulated for next time.
         self.root = Path(root)
         self.enabled = enabled
+        self.bust = bust
         if enabled:
             self.root.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +38,7 @@ class Cache:
         return self.root / f"{md5(key)}.json"
 
     def get(self, key: str) -> Optional[Any]:
-        if not self.enabled:
+        if not self.enabled or self.bust:
             return None
         p = self._path(key)
         if not p.is_file():
@@ -55,7 +59,7 @@ class Cache:
             logger.warning("Cache write failed for %s: %s", key, e)
 
     def get_text(self, key: str) -> Optional[str]:
-        if not self.enabled:
+        if not self.enabled or self.bust:
             return None
         p = self.root / f"{md5(key)}.txt"
         return p.read_text() if p.is_file() else None
