@@ -81,16 +81,23 @@ class LLMClient:
         for model in models:
             try:
                 budget = max_tokens
-                for _ in range(2):  # bump once if the model truncates (finish=length)
+                text = ""
+                for attempt in range(4):  # keep doubling the budget on truncation
                     resp = self.client.chat.completions.create(
                         model=model, messages=messages, temperature=0, max_tokens=budget,
                     )
                     text = (resp.choices[0].message.content or "").strip()
                     finish = getattr(resp.choices[0], "finish_reason", None)
-                    if finish == "length" and text:
-                        logger.warning("chat truncated on %s; retrying with more tokens", model)
-                        budget = min(budget * 2, 16000)
+                    if finish == "length" and text and budget < 32000:
+                        logger.warning("chat truncated on %s at %d tokens; retrying larger",
+                                       model, budget)
+                        budget = min(budget * 2, 32000)
                         continue
+                    if finish == "length":
+                        # gave up — surface it clearly so a real truncation is visible
+                        logger.warning("chat STILL truncated on %s at %d tokens after "
+                                       "%d tries — response may be incomplete", model,
+                                       budget, attempt + 1)
                     break
                 if self.cache:
                     self.cache.set(key, {"text": text, "model": model})

@@ -108,7 +108,7 @@ def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> 
     payload["plot_observation"] = vision_note
     try:
         return llm.chat(_GROUP_SYS, json.dumps(payload, default=str),
-                        max_tokens=2500,
+                        max_tokens=6000,
                         cache_key=f"obs:{gr.group.group_id}:{len(gr.analyses)}:v2")
     except Exception as e:  # noqa: BLE001
         logger.warning("group observation failed: %s", e)
