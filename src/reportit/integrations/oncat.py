@@ -128,7 +128,12 @@ def fetch_catalog_cached(ipts: int, cache, refresh: bool = False) -> Optional[pd
     try:
         df = fetch_catalog(ipts)
     except Exception as e:
-        logger.warning("ONCat unavailable for IPTS-%d: %s", ipts, e)
+        hint = ""
+        if "token" in str(e).lower():
+            hint = (" — ONCat auth/server appears to be down (e.g. HTTP 502); this "
+                    "is not a reportit or credentials problem. Proceeding with run "
+                    "titles inferred from filenames; retry later with --refresh.")
+        logger.warning("ONCat unavailable for IPTS-%d: %s%s", ipts, e, hint)
         return None
     if cache is not None and not df.empty:
         cache.set(key, df.to_dict(orient="records"))
