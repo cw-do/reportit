@@ -16,6 +16,13 @@ from . import pipeline
 @click.option("-o", "--out", "out_dir", default=None,
               help="Output directory (default: ./reportit_out/IPTS-<n>).")
 @click.option("--no-llm", is_flag=True, help="Deterministic mode — no LLM reasoning.")
+@click.option("--proposal", "proposal_path", type=click.Path(), default=None,
+              metavar="PATH",
+              help="Proposal document folder or a single PDF to use. If omitted, "
+                   "proposals are auto-discovered from the experiment's shared "
+                   "folder: '<shared>/proposal/*.pdf' (the default location), plus "
+                   "any other *.pdf found under '<shared>' (e.g. relevant prior "
+                   "work). Use --no-proposal to ignore proposals entirely.")
 @click.option("--no-proposal", is_flag=True, help="Ignore the proposal PDF(s).")
 @click.option("--strategy-only", is_flag=True,
               help="Print the LLM-derived AnalysisStrategy and stop.")
@@ -27,7 +34,8 @@ from . import pipeline
 @click.option("--max-llm-steps", type=int, default=None,
               help="Max agentic strategy tool-calling steps.")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
-def main(target, out_dir, no_llm, no_proposal, strategy_only, refresh, sasfit, max_llm_steps, verbose):
+def main(target, out_dir, no_llm, proposal_path, no_proposal, strategy_only, refresh,
+         sasfit, max_llm_steps, verbose):
     """Generate an EQSANS post-experiment report for an IPTS number or shared path."""
     logging.basicConfig(
         level=logging.INFO if verbose or strategy_only else logging.WARNING,
@@ -46,7 +54,7 @@ def main(target, out_dir, no_llm, no_proposal, strategy_only, refresh, sasfit, m
     try:
         result = pipeline.run_report(
             target, out_dir,
-            no_llm=no_llm, no_proposal=no_proposal,
+            no_llm=no_llm, no_proposal=no_proposal, proposal_path=proposal_path,
             strategy_only=strategy_only, refresh=refresh,
             sasfit=sasfit, max_llm_steps=max_llm_steps,
         )

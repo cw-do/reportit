@@ -51,6 +51,7 @@ def run_report(
     strategy_only: bool = False,
     refresh: bool = False,
     sasfit: bool = True,
+    proposal_path: Optional[str] = None,
     max_llm_steps: Optional[int] = None,
 ) -> RunResult:
     out_dir = Path(out_dir)
@@ -92,14 +93,20 @@ def run_report(
     else:
         _fill_titles(datasets, catalog)
 
-    # 4) proposal
+    # 4) proposal — user-specified folder/file, else auto-discovered from shared/
     proposal = ProposalInfo()
-    if not no_proposal and inv.proposal_pdfs:
-        logger.info("Reading proposal: %s", ", ".join(p.name for p in inv.proposal_pdfs))
-        proposal = summarize.summarize(inv.proposal_pdfs, llm)
+    if proposal_path:
+        proposal_pdfs = _resolve_proposal_pdfs(proposal_path)
+        if not proposal_pdfs:
+            ctx.degraded.append(f"No PDF found at --proposal path: {proposal_path}")
+    else:
+        proposal_pdfs = inv.proposal_pdfs  # default auto-discovery (shared/proposal/, etc.)
+    if not no_proposal and proposal_pdfs:
+        logger.info("Reading proposal: %s", ", ".join(p.name for p in proposal_pdfs))
+        proposal = summarize.summarize(proposal_pdfs, llm)
         if not proposal.available:
             ctx.degraded.append("Proposal PDF present but no extractable text.")
-    elif not inv.proposal_pdfs:
+    elif not no_proposal and not proposal_pdfs:
         ctx.degraded.append("No proposal document found.")
     ctx.proposal = proposal
 
@@ -228,6 +235,20 @@ def _title(ctx, proposal) -> str:
     if proposal and proposal.title:
         return f"EQSANS IPTS-{ctx.ipts}: {proposal.title}"
     return f"EQSANS Experiment Report — IPTS-{ctx.ipts}"
+
+
+def _resolve_proposal_pdfs(proposal_path: str) -> list:
+    """Resolve a user-supplied --proposal path (folder or single PDF) to PDFs."""
+    p = Path(proposal_path).expanduser()
+    if p.is_file() and p.suffix.lower() == ".pdf":
+        return [p]
+    if p.is_dir():
+        pdfs = sorted(p.glob("*.pdf"))
+        if not pdfs:
+            pdfs = sorted(p.rglob("*.pdf"))  # also look in subfolders
+        return pdfs
+    logger.warning("--proposal path not found or not a PDF/dir: %s", proposal_path)
+    return []
 
 
 def _enforce_merged_variant(strategy, datasets, ctx) -> None:

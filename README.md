@@ -106,6 +106,7 @@ fit only over the regime it applies to; excluded points are shown faintly.
 | `-o, --out DIR` | output directory (default `./reportit_out/IPTS-<n>`) |
 | `--strategy-only` | print the LLM-derived `AnalysisStrategy` JSON and stop |
 | `--no-llm` | deterministic mode: heuristic grouping, no LLM reasoning |
+| `--proposal PATH` | proposal folder or single PDF to use (default: auto-discover `<shared>/proposal/*.pdf` and any `*.pdf` under `<shared>`) |
 | `--no-proposal` | ignore the proposal PDF(s) |
 | `--refresh` | bust caches (re-query ONCat / re-run LLM) |
 | `--no-sasfit` | skip the agentic sasmodels model-based fitting (on by default) |
