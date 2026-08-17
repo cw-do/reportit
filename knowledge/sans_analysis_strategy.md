@@ -302,6 +302,27 @@ to no actual peak.
   Judge any model on whether it reproduces the peak STRUCTURE; if none does, say so
   rather than quoting the parameters of a model that smoothed the structure away.
 
+### 11b. Lamellar models: only the STACK models report a spacing
+
+If the system is lamellar, choose a model that can actually answer the question:
+
+- `lamellar_stack_caille`, `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal`
+  have a **`d_spacing` parameter** — these can report a repeat distance.
+- plain `lamellar` and `lamellar_hg` are single-lamella **form factors** with NO
+  spacing parameter. They describe one bilayer, not a stack, and cannot give a
+  repeat distance no matter how well they fit.
+
+**Always check the model's spacing against the measured peaks.** A model can win
+on curve-shape agreement while reporting a spacing that corresponds to no observed
+peak — the fit reproduces the overall decay and quietly ignores the peak
+structure. If the fitted `d` does not match a measured peak position (or a
+low-order reflection of one, d/2, d/3), the number is not the repeat distance and
+must not be quoted as one; report the measured peak positions instead and say the
+model failed to reproduce the structure.
+
+And never report that a model "fails to capture the peak" without also giving the
+measured peak position. A stated failure with no number is useless to the reader.
+
 ## 12. Planning the analysis (before any fitting)
 
 Deciding WHAT to analyse and HOW TO GROUP it determines whether a report is
@@ -352,26 +373,6 @@ useful. These rules apply to any experiment.
 - Prefer a plain statement of what the data show over a model-derived number the
   data cannot support (see §8 and §10).
 
-### 11b. Lamellar models: only the STACK models report a spacing
-
-If the system is lamellar, choose a model that can actually answer the question:
-
-- `lamellar_stack_caille`, `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal`
-  have a **`d_spacing` parameter** — these can report a repeat distance.
-- plain `lamellar` and `lamellar_hg` are single-lamella **form factors** with NO
-  spacing parameter. They describe one bilayer, not a stack, and cannot give a
-  repeat distance no matter how well they fit.
-
-**Always check the model's spacing against the measured peaks.** A model can win
-on curve-shape agreement while reporting a spacing that corresponds to no observed
-peak — the fit reproduces the overall decay and quietly ignores the peak
-structure. If the fitted `d` does not match a measured peak position (or a
-low-order reflection of one, d/2, d/3), the number is not the repeat distance and
-must not be quoted as one; report the measured peak positions instead and say the
-model failed to reproduce the structure.
-
-And never report that a model "fails to capture the peak" without also giving the
-measured peak position. A stated failure with no number is useless to the reader.
 
 ## 13. When NOT to fit a model at all
 

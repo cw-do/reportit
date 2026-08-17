@@ -181,7 +181,7 @@ sub-scores), and `notebook.md` (the ranked lab notebook). Options: `--out DIR`,
 | `--data DIR` | reduced-data folder to analyze (default: auto-discovered — every directory under the target that holds `*_Iq.dat`). Repeatable; may point outside the target; an explicit choice overrides the LLM's variant selection |
 | `--userguide TEXT` | a few sentences in plain English steering the analysis; interpreted once and routed to the steps it affects (alias `--guide`) |
 | `--refresh` | bust caches (re-query ONCat / re-run LLM) |
-| `--sasfit` / `--no-sasfit` | run / skip the autoresearch sasmodels fitting (on by default) |
+| `--sasfit` / `--no-sasfit` | force model-based fitting on / off. **Off by default** — with neither flag it runs only when the proposal names the analysis it wants. Alias: `--sasmodels` / `--no-sasmodels` |
 | `--summary-only` | generate only `report_summary.pdf` (skip the comprehensive report) |
 | `--knowledge DIR` | extra directory of reference-knowledge notes for this run (repeatable) |
 | `--learn TEXT` | teach a general lesson (written to `~/.reportit/knowledge/`) and exit |
@@ -194,25 +194,33 @@ sub-scores), and `notebook.md` (the ranked lab notebook). Options: `--out DIR`,
 
 ## Usage recipes for different applications
 
-**Full analysis (default)** — proposal + strategy + figures + autoresearch
-fitting + narrative; produces both PDFs plus `sasfit_notebook.md`:
+**Default run** — proposal + strategy + figures + qualitative observations +
+narrative, plus any analysis the proposal's goal implies (peak / repeat-distance
+measurement with its evidence figure). Model fitting runs only if the proposal
+names the analysis it wants:
 
 ```bash
 reportit 38533
 ```
 
-**Quick overview, no fitting** — fastest path to a readable report; skips the
-(slow) fitting stage and emits only the condensed summary PDF:
+**Force the model-based fitting on** — a full sasmodels search per group, adding
+the Model-Based Fitting section and `sasfit_notebook.md`:
+
+```bash
+reportit 38533 --sasfit
+```
+
+**Quickest readable report** — condensed summary PDF only, fitting explicitly off:
 
 ```bash
 reportit 38533 --no-sasfit --summary-only
 ```
 
-**Full report but only the summary PDF** — run everything, skip building the
-long comprehensive PDF:
+**Everything, but only the summary PDF** — skip building the long comprehensive
+report:
 
 ```bash
-reportit 38533 --summary-only
+reportit 38533 --sasfit --summary-only
 ```
 
 **Deterministic / offline (no API key, no LLM)** — heuristic grouping, default
@@ -415,11 +423,13 @@ On IPTS-38773 this resolves a reproducible **second peak at ~13.5 nm** alongside
 the ~19 nm primary in every `leaf1_dark` curve — structure the earlier
 single-peak treatment missed.
 
-The fits are shown as a **Peak Fit Summary** grid — one compact panel per sample
-(2 columns up to 4 curves, 3 beyond), each showing the data, the background, the
-total fit and the fitted peak positions, annotated with its repeat distance. The
-whole series lands on one page, so how the peak moves from sample to sample reads
-at a glance instead of one full-width figure per curve.
+The fits themselves are shown in an appendix, **Peak Fit Evidence** — one compact
+panel per sample in a grid (2 columns up to 4 curves, 3 beyond), each showing the
+data, the background, the total fit and the fitted peak positions, annotated with
+its repeat distance. The whole series lands on one page, so how the peak moves
+from sample to sample reads at a glance. Every peak table cross-references that
+figure, so the numbers stay traceable to the fits without the diagnostics
+crowding out the results.
 
 **Lamellar systems.** Only the *stack* models report a spacing:
 `lamellar_stack_caille`, `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal`

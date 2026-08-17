@@ -16,6 +16,24 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.11.3
+
+Documentation sweep after the opt-in and appendix changes.
+
+- README: the `--sasfit` row still said "on by default" — the opposite of current
+  behaviour — and `--sasmodels/--no-sasmodels` was undocumented. Usage recipes
+  rewritten around the opt-in default. The peak section now says the fits live in
+  the **Peak Fit Evidence** appendix and are cross-referenced.
+- `.env.example` listed a single `OPENROUTER_MODEL=openai/gpt-5-mini`; it now
+  carries all four model roles at their real defaults plus the optional
+  `OPENROUTER_BASE_URL` and `REPORTIT_KNOWLEDGE_DIR`. Cross-checked against every
+  `os.getenv` in `config.py`.
+- Knowledge guide: section 11b had been appended after section 12, stranding a
+  peak rule inside the planning material. Moved back beside 11 and 11a.
+- `task.md` brought up to date with the work since the foundation, and an explicit
+  "not done" list (knowledge feedback loop, gridding the sasmodels fit figures,
+  exposing peak-detection thresholds, embedding retrieval).
+
 ## 0.11.2
 
 - **Peak Fit Summary moved to the appendix** as "Peak Fit Evidence". Its purpose
