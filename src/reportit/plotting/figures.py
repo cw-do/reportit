@@ -73,6 +73,7 @@ def overlay_iq(
     prefer_merged: bool = True,
     fit: FitResult | None = None,
     fit_member_index: int = 0,
+    namemap=None,
 ) -> Path | None:
     """Log-log overlay of I(Q) for a group's members. Returns out_path or None."""
     plotted = 0
@@ -97,6 +98,11 @@ def overlay_iq(
             continue
         is_merged = bool(ds.merged_path) and Path(path) == Path(ds.merged_path)
         label = _legend_label(path) if is_merged else ds.output_name
+        if namemap is not None:
+            # prefer the dataset's short name; fall back to shortening the
+            # merged filename core, which may differ from the output name
+            label = namemap.short(ds.output_name) if namemap.short(ds.output_name) != ds.output_name \
+                else namemap.short(label)
         if compare_variants:
             label = f"{label} [{ds.variant}]"
         ls = "-" if ds.variant.endswith("mask4") or not compare_variants else "--"

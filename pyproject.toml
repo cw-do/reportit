@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reportit"
-version = "0.1.0"
+dynamic = ["version"]   # read from src/reportit/__init__.py
 description = "LLM-driven post-experiment report generator for EQSANS at SNS"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,6 +49,10 @@ extra = [
 
 [project.scripts]
 reportit = "reportit.__main__:main"
+sasresearch = "reportit.sasresearch.__main__:main"
+
+[tool.hatch.version]
+path = "src/reportit/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reportit"]

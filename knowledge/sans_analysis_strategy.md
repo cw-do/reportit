@@ -179,3 +179,99 @@ whole-particle plateau / aggregates; ~1/Rg = Guinier knee (overall size);
 intermediate = chain-conformation / mass-fractal power law; highest Q =
 surface/interface Porod. The required Q-range is NOT universal — the feature of
 interest must lie inside the measured window or the analysis fails.
+
+## 8. The Guinier-region prerequisite (decisive — obey the curve, not the proposal)
+
+Every model that reports a SIZE — `guinier`, `guinier_porod`, `mono_gauss_coil`,
+`poly_gauss_coil`, `polymer_excl_volume`, `unified_power_Rg`, and all form factors
+(`sphere`, `ellipsoid`, `cylinder`, …) — requires a **resolved Guinier region**: a
+low-Q PLATEAU where I(Q) flattens (log–log slope → 0) before the higher-Q power
+law. That plateau is what pins Rg.
+
+- If the low-Q keeps RISING (an upturn, or an unbroken power law with no
+  flattening), the size is **unconstrained**. Such a model fails at low Q — it
+  rolls over while the data shoots up — and the reported Rg is meaningless.
+- In that case use a **correlation / Ornstein–Zernike** description
+  (`correlation_length`, `lorentz`): it needs no Guinier plateau and fits the full
+  range. For any solution / semidilute sample, always *compare* these two.
+- **Excluding the low-Q with q_min to prop up a size model is not acceptable.** A
+  correlation model that fits the whole range beats a size model that only "works"
+  on a truncated window.
+- `guinier_porod` is for a genuine TWO-LEVEL system (a globular Guinier knee that
+  IS in range, plus separate large-scale structure) — not for absorbing an upturn.
+- Caution: a Lorentzian/OZ curve also flattens at low Q. A plateau therefore makes
+  size models *admissible*, not correct; absence of one is the strong signal.
+
+## 9. Prefer the full measured Q-range
+
+Default q_min/q_max to the data ends. Narrow the window ONLY for a genuinely
+out-of-scope feature (an aggregation upturn the model cannot describe, a
+noise-dominated tail), never to lower χ².
+
+- After choosing a model on a restricted window, **refit it over the full range**
+  and keep the full-range fit unless it is clearly worse. If the model's
+  extrapolation already tracks the excluded points, excluding them was cosmetic.
+- A fit that excludes points and then **diverges from them** is worse than it
+  looks: judge the model against the data it threw away, not only the data it kept.
+- `correlation_length` has a Porod term precisely so it can describe a low-Q
+  upturn directly — with it, a restricted window is rarely justified.
+
+## 10. Searching parameter space, and judging the result
+
+**Search — one start is not enough.** A single local optimisation from one seed
+lands in a local minimum for `correlation_length`, `lorentz`, `teubner_strey`,
+`broad_peak` and friends. Fit each candidate from MANY diverse starts: sweep the
+size parameter around the data's knee (roughly 0.15×–6×) and the power-law
+exponents across their physical range; keep whichever converges best. Anchor
+amplitude/scale/background to the measured intensity rather than randomising them.
+
+**Judge by curve shape, not χ² alone.** χ²_R is a supporting witness. Rank fits on
+how well they reproduce the *shape*:
+- the size of the log–log residual (the vertical gap a human sees);
+- agreement of the LOCAL SLOPE profile across the whole range (curvature everywhere);
+- agreement of FEATURE POSITIONS (knee, bump, valley in the right place);
+- residual RANDOMNESS — long same-sign runs mean systematic misfit even at low χ².
+
+A low-χ² fit with an S-shaped residual, or a knee in the wrong place, loses to one
+that tracks the curve everywhere.
+
+**Then apply physics penalties** to that score, because curve agreement alone
+cannot see:
+- a size-based model used where there is no Guinier plateau (§8);
+- points excluded from the fit that the model then diverges from (§9);
+- a parameter pinned at a bound, or with relative uncertainty ≳1 — that parameter
+  is unconstrained and the model/window/start is wrong.
+
+## 11. Peaks and repeat distances
+
+When the science question is a PERIODICITY — lamellar repeat, interlayer or layer
+spacing, granum/thylakoid stacking, any "d-spacing" — the experiment is answered by
+one number per sample: `d = 2π/Q_peak`. Report it in Å *and* nm; the literature for
+biological and lamellar systems is usually in nm.
+
+Finding the peak, in order of reliability:
+
+1. **Fit a peak-bearing model** (`broad_peak`, `gaussian_peak`, `lamellar`,
+   `teubner_strey`) and take its peak parameter (`peak_pos`, `q0`, `d_spacing`).
+   This is the best estimate: the fit separates the peak from the decaying
+   background and gives an uncertainty (propagate it: σ_d = 2π·σ_Q/Q²).
+   Never choose a Q-window that cuts the peak out.
+2. **Model-free**, as a cross-check and for curves that are not fitted. A
+   correlation peak usually rides on a steeply decaying background, so the raw
+   curve has NO local maximum where the peak is. Remove a smooth baseline in
+   log–log first (a low-order polynomial; a straight line is not enough — the
+   curvature at the window ends then dominates and the search lands on an edge),
+   then find the maximum of the residual.
+
+Guard rails, learned the hard way:
+- Require an **interior** maximum that stands several times above the
+  point-to-point scatter. Otherwise noise is reported as structure.
+- **Do not search the background-dominated high-Q tail.** A "peak" at Q≈0.4 Å⁻¹
+  is a 1.5 nm "repeat distance" — confident nonsense. Confine the search to the
+  lower portion of the measured range unless the science says otherwise.
+- Report "no peak found" honestly. A curve without a clear peak is a result.
+- Model-free and fitted estimates can disagree (the fit sees through the
+  background, the model-free estimate is pulled by it). **Report both.** The
+  disagreement measures how well separated the peak is, and is information.
+- Track the peak ACROSS the series — how d changes with temperature, position or
+  treatment is usually the actual science, not any single value.

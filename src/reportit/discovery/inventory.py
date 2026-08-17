@@ -38,7 +38,8 @@ def is_reportit_output_dir(p: Path) -> bool:
         pass
     return False
 
-_IQ1D_RE = re.compile(r"_Iq\.dat$", re.IGNORECASE)
+# .dat or .txt — the extension carries no meaning (see scan._IQ1D_RE).
+_IQ1D_RE = re.compile(r"_Iq\.(?:dat|txt)$", re.IGNORECASE)
 _IQ2D_RE = re.compile(r"_Iqxqy\.(dat|h5)$", re.IGNORECASE)
 _NOTE_RE = re.compile(r"(note|readme).*", re.IGNORECASE)
 
@@ -160,6 +161,82 @@ def build(target: str | int | Path, max_files: int = 20000) -> FolderInventory:
         variant_summary=variant_summary,
         total_files=len(entries),
     )
+
+
+def variant_labels(dirs: list[Path]) -> dict[Path, str]:
+    """Map each reduced-data directory to a unique variant label.
+
+    Normally the label is just the directory name ("output", "output_mask4").
+    When two chosen directories share a name (e.g. ``runA/output`` and
+    ``runB/output``) they are disambiguated with their parent, so datasets from
+    different reductions never collapse onto one variant key.
+    """
+    dirs = [Path(d) for d in dirs]
+    counts = Counter(d.name for d in dirs)
+    labels: dict[Path, str] = {}
+    for d in dirs:
+        labels[d] = d.name if counts[d.name] == 1 else f"{d.parent.name}/{d.name}"
+    return labels
+
+
+def _summarize_data_dirs(dirs: list[Path]) -> tuple[list[str], list[str], list[str]]:
+    """(variant_summary, naming_examples, combined_examples) read straight from
+    the given directories — used when the user names them explicitly, since they
+    may lie outside the walked target tree."""
+    variant_summary, iq_names, combined = [], set(), set()
+    for od in dirs:
+        n_iq = n_comb = 0
+        try:
+            children = sorted(p for p in od.iterdir() if p.is_file())
+        except OSError:
+            children = []
+        for p in children:
+            if _IQ1D_RE.search(p.name):
+                n_iq += 1
+                iq_names.add(_IQ1D_RE.sub("", p.name))
+            elif scan.is_combined_name(p.name):
+                n_comb += 1
+                combined.add(p.name)
+        variant_summary.append(
+            f"{od.name}: {n_iq} per-config 1D, {n_comb} combined/merged "
+            + ("(has extended-Q)" if n_comb else "(NO combined — per-config only)"))
+    return variant_summary, sorted(iq_names)[:40], sorted(combined)[:20]
+
+
+def restrict_output_dirs(inv: FolderInventory,
+                         data_dirs: list[str | Path]) -> tuple[FolderInventory, list[str]]:
+    """Replace the auto-discovered reduced-data directories with user-specified
+    ones. Returns the updated inventory and a list of problems to report.
+
+    Each path must be an existing directory; it is kept even if it holds no
+    recognised data so the caller can warn about it explicitly rather than
+    silently analysing nothing. Directories outside the target tree are allowed.
+    """
+    resolved: list[Path] = []
+    problems: list[str] = []
+    for raw in data_dirs:
+        p = Path(raw).expanduser()
+        if not p.is_dir():
+            problems.append(f"--data path is not a directory: {raw}")
+            continue
+        p = p.resolve()
+        if p not in resolved:
+            resolved.append(p)
+    if not resolved:
+        return inv, problems
+
+    summary, names, combined = _summarize_data_dirs(resolved)
+    for od, line in zip(resolved, summary):
+        if line.startswith(f"{od.name}: 0 per-config 1D, 0 "):
+            problems.append(
+                f"--data directory has no reduced 1D data (*_Iq.dat or merged "
+                f"*.txt/*.dat): {od}")
+    inv.output_dirs = resolved
+    inv.variant_summary = summary
+    inv.naming_examples = names
+    inv.combined_examples = combined
+    inv.data_dirs_fixed = True
+    return inv, problems
 
 
 def resolve_target(target: str | int | Path) -> tuple[Path, int]:

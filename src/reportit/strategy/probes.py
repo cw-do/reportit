@@ -17,8 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 class Probes:
-    def __init__(self, shared_dir: Path, datasets: list[Dataset], catalog=None):
+    def __init__(self, shared_dir: Path, datasets: list[Dataset], catalog=None,
+                 extra_roots: list[Path] | None = None):
         self.shared_dir = Path(shared_dir).resolve()
+        # Additional readable roots — reduced-data folders named explicitly with
+        # --data may sit outside the target tree; the agent must still be able to
+        # list them and read their reduction JSONs.
+        self.roots = [self.shared_dir] + [
+            Path(r).resolve() for r in (extra_roots or [])
+            if Path(r).resolve() != self.shared_dir]
         self.datasets = datasets
         self.catalog = catalog
         self._by_key = {(d.variant, d.output_name): d for d in datasets}
@@ -28,26 +35,40 @@ class Probes:
             self._by_name.setdefault(d.output_name, d)
 
     # -- path safety ------------------------------------------------------ #
+    def _root_of(self, p: Path) -> Path | None:
+        """The allowed root containing ``p``, or None if it escapes them all."""
+        for root in self.roots:
+            if p == root or root in p.parents:
+                return root
+        return None
+
     def _resolve(self, path: str) -> Path:
         p = Path(path)
         if not p.is_absolute():
             p = self.shared_dir / p
         p = p.resolve()
-        if self.shared_dir not in p.parents and p != self.shared_dir:
-            raise ValueError(f"Path escapes shared dir: {path}")
-        if self._in_output(p):
+        root = self._root_of(p)
+        if root is None:
+            raise ValueError(f"Path escapes the readable data directories: {path}")
+        if self._in_output(p, root):
             raise ValueError(f"Path is inside a reportit output directory: {path}")
         return p
 
-    def _in_output(self, p: Path) -> bool:
+    def _rel(self, p: Path) -> str:
+        """Path relative to whichever allowed root contains it (absolute if none)."""
+        root = self._root_of(p)
+        return str(p.relative_to(root)) if root else str(p)
+
+    def _in_output(self, p: Path, root: Path | None = None) -> bool:
         """True if p is within a reportit-generated report dir (so the agent never
-        reads its own prior output). Checks p and parents down to the shared dir."""
+        reads its own prior output). Checks p and parents down to its root."""
         from ..discovery.inventory import is_reportit_output_dir
+        root = root or self._root_of(p) or self.shared_dir
         d = p
         while True:
             if d.is_dir() and is_reportit_output_dir(d):
                 return True
-            if d == self.shared_dir or self.shared_dir not in d.parents:
+            if d == root or root not in d.parents:
                 return False
             d = d.parent
 
@@ -73,7 +94,7 @@ class Probes:
             except OSError:
                 size = 0
             out.append({"name": child.name, "is_dir": child.is_dir(), "size": size})
-        return {"path": str(p.relative_to(self.shared_dir)), "entries": out,
+        return {"path": self._rel(p), "entries": out,
                 "count": len(list(p.iterdir()))}
 
     def _t_read_text(self, args: dict) -> Any:
@@ -87,7 +108,7 @@ class Probes:
             data = p.read_text(errors="replace")[:max_bytes]
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
-        return {"path": str(p.relative_to(self.shared_dir)), "text": data}
+        return {"path": self._rel(p), "text": data}
 
     def _t_head_file(self, args: dict) -> Any:
         p = self._resolve(args["path"])
@@ -100,7 +121,7 @@ class Probes:
                 if i >= n:
                     break
                 lines.append(line.rstrip("\n"))
-        return {"path": str(p.relative_to(self.shared_dir)), "lines": lines}
+        return {"path": self._rel(p), "lines": lines}
 
     def _t_parse_reduction_json(self, args: dict) -> Any:
         p = self._resolve(args["path"])

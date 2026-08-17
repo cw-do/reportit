@@ -85,9 +85,17 @@ def _group_payload(gr: GroupReport) -> dict:
     }
 
 
-def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> str:
+def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "",
+                  guide=None) -> str:
     if llm is None:
         return _deterministic_group_text(gr)
+
+    from .. import guidance
+    from ..analysis import knowledge
+    hint = guidance.hint_block(guide, "narrative")
+    kb = knowledge.load_knowledge(stage="narrative", context=context)
+    if kb:
+        hint += f"\n\nReference knowledge (general):\n{kb}"
 
     # 1) visually inspect the actual overlay plot (multimodal)
     vision_note = ""
@@ -107,9 +115,10 @@ def observe_group(gr: GroupReport, llm: LLMClient | None, context: str = "") -> 
     payload["experiment_context"] = context[:6000]
     payload["plot_observation"] = vision_note
     try:
-        return llm.chat(_GROUP_SYS, json.dumps(payload, default=str),
+        return llm.chat(_GROUP_SYS + hint, json.dumps(payload, default=str),
                         max_tokens=6000,
-                        cache_key=f"obs:{gr.group.group_id}:{len(gr.analyses)}:v2")
+                        cache_key=f"obs:{gr.group.group_id}:{len(gr.analyses)}:"
+                                  f"g={guidance.digest(guide)}:kb={knowledge.digest('narrative')}:v2")
     except Exception as e:  # noqa: BLE001
         logger.warning("group observation failed: %s", e)
         return vision_note or _deterministic_group_text(gr)
@@ -131,6 +140,7 @@ def global_narrative(
     group_reports: list[GroupReport],
     proposal: ProposalInfo,
     llm: LLMClient | None,
+    guide=None,
 ) -> tuple[str, str, list[HypothesisCheck]]:
     if llm is None:
         overview = strategy.experiment_summary or "EQSANS experiment summary."
@@ -155,9 +165,14 @@ def global_narrative(
         ],
     }
     try:
-        data = llm.chat_json(_GLOBAL_SYS, json.dumps(payload, default=str),
+        from .. import guidance
+        from ..analysis import knowledge
+        data = llm.chat_json(_GLOBAL_SYS + guidance.hint_block(guide, "narrative"),
+                             json.dumps(payload, default=str),
                              max_tokens=8000,
-                             cache_key=f"global:{strategy.experiment_summary[:40]}:{len(group_reports)}")
+                             cache_key=f"global:{strategy.experiment_summary[:40]}:"
+                                       f"{len(group_reports)}:g={guidance.digest(guide)}:"
+                                       f"kb={knowledge.digest('narrative')}")
     except Exception as e:  # noqa: BLE001
         logger.warning("global narrative failed: %s", e)
         return strategy.experiment_summary, "", []

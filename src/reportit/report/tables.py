@@ -56,8 +56,29 @@ def _describe(base: str, rep: Dataset | None, proposal) -> str:
     return "—"
 
 
-def build_sample_summary(datasets, strategy, proposal) -> TableSpec | None:
+def _drop_empty_columns(headers, rows, colspec, *, keep: int = 1):
+    """Remove columns that are empty ('—') in every row.
+
+    Merged-only datasets carry no reduction JSON, so Description / Configurations
+    / Conditions can be entirely unknown — a column of dashes is noise, and a
+    table of nothing but names says less than no table at all.
+    """
+    specs = colspec.split() if colspec else [""] * len(headers)
+    if len(specs) != len(headers):
+        specs = [""] * len(headers)
+    keep_idx = [i for i in range(len(headers))
+                if i < keep or any(str(r[i]).strip() not in ("—", "", "-") for r in rows)]
+    if len(keep_idx) == len(headers):
+        return headers, rows, colspec, False
+    headers = [headers[i] for i in keep_idx]
+    rows = [[r[i] for i in keep_idx] for r in rows]
+    colspec = " ".join(specs[i] for i in keep_idx).strip()
+    return headers, rows, colspec, True
+
+
+def build_sample_summary(datasets, strategy, proposal, namemap=None) -> TableSpec | None:
     science = _science(datasets, strategy)
+    short = namemap.short if namemap is not None else (lambda x: x)
     by_base: dict[str, dict] = {}
     for d in science:
         rec = by_base.setdefault(d.base, {"configs": set(), "temps": set(), "rep": None})
@@ -76,21 +97,55 @@ def build_sample_summary(datasets, strategy, proposal) -> TableSpec | None:
         desc = _describe(base, rec["rep"], proposal)
         configs = ", ".join(sorted(rec["configs"], key=_natkey)) or "—"
         temps = ", ".join(sorted(rec["temps"], key=_temp_val)) or "—"
-        rows.append([base, desc, configs, temps])
+        rows.append([short(base), desc, configs, temps])
 
+    headers = ["Sample", "Description", "Configurations", "Conditions"]
+    colspec = "l p{6.2cm} p{3.2cm} p{3.0cm}"
+    headers, rows, colspec, trimmed = _drop_empty_columns(headers, rows, colspec)
+    if len(headers) <= 1:
+        # Only the sample names survived — nothing this table can tell the reader
+        # that the group sections and the ONCat catalog do not already say.
+        return None
+
+    caption = ("Samples measured in this experiment (calibration standards excluded). "
+               "Conditions list the temperatures measured for each sample.")
+    if trimmed:
+        caption += (" Columns with no information for this experiment (the reduced "
+                    "files carry no reduction metadata) are omitted.")
     return TableSpec(
-        caption="Samples measured in this experiment (calibration standards excluded). "
-                "Conditions list the temperatures measured for each sample.",
+        caption=caption,
         label="tab:samples",
-        headers=["Sample", "Description", "Configurations", "Conditions"],
+        headers=headers,
         rows=rows,
         longtable=True, fontsize="small",
-        colspec="l p{6.2cm} p{3.2cm} p{3.0cm}",
+        colspec=colspec,
     )
 
 
-def build_reduction_table(datasets, strategy) -> TableSpec | None:
+def build_name_map_table(namemap) -> TableSpec | None:
+    """Legend for the short names used throughout the report."""
+    if namemap is None or not namemap.active:
+        return None
+    pairs = namemap.pairs()
+    if not pairs:
+        return None
+    return TableSpec(
+        caption="Short names used in the tables, figures and fits of this report, "
+                "and the reduced-output file each one refers to. Short names are "
+                "derived by dropping the leading and trailing name parts that every "
+                "file shares, so only the distinguishing part is shown.",
+        label="tab:shortnames",
+        headers=["Short name", "Full reduced-output name"],
+        rows=[[s, f] for s, f in pairs],
+        longtable=True, fontsize="footnotesize",
+        colspec="l p{12cm}",
+        section_title="Short Name Legend",
+    )
+
+
+def build_reduction_table(datasets, strategy, namemap=None) -> TableSpec | None:
     science = _science(datasets, strategy)
+    short = namemap.short if namemap is not None else (lambda x: x)
     configs = sorted({d.config for d in science if d.config}, key=_natkey)
     if not configs:
         return None
@@ -116,7 +171,7 @@ def build_reduction_table(datasets, strategy) -> TableSpec | None:
     rows = []
     for (base, temp) in sorted(keyed, key=lambda kt: (_natkey(kt[0]), _temp_val(kt[1]))):
         rec = keyed[(base, temp)]
-        row = [base, temp or "—"]
+        row = [short(base), temp or "—"]
         for c in configs:
             scatt, trans = rec["by_config"].get(c, (None, None))
             row += [scatt or "—", trans or "—"]

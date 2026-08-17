@@ -11,6 +11,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from .. import __version__
 from ..models import ReportModel, TableSpec
 from . import latex_utils as L
 
@@ -76,18 +77,21 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
     env = _make_env()
     template = env.get_template("report.tex.j2")
 
+    nm = model.namemap
+    slabel = nm.shorten_label if nm is not None else (lambda x: x)
     groups = []
     for gr in model.group_reports:
         figs = gr.figures
         if mode == "summary":
             figs = [f for f in gr.figures if f.label.endswith("_iq")][:1]  # 1D only
         groups.append({
-            "title": L.escape(gr.group.label),
+            "title": L.escape(slabel(gr.group.label)),
             "description": L.escape_keep_math(gr.group.description),
             "observations": L.escape_keep_math(gr.observations),
             "figures": [{"path": str(f.path), "caption": L.escape_keep_math(f.caption),
                          "label": f.label, "width": f.width} for f in figs],
             "table": gr.table,
+            "extra_tables": list(getattr(gr, "extra_tables", []) or []),
         })
 
     hyp = [{"hypothesis": L.escape(h.hypothesis), "verdict": L.escape(h.verdict),
@@ -102,11 +106,14 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
 
     sas_sections = _build_sas_sections(model, mode)
     sas_summary = _build_sas_summary(model)
+    sas_appendix = _build_sas_appendix(model, mode)
 
     return template.render(
         mode=mode,
         title=L.escape(model.title),
         generated_at=L.escape(model.generated_at),
+        reportit_version=L.escape(model.reportit_version or __version__),
+        llm_model=L.escape(model.model_name),
         overview=L.escape_keep_math(model.overview),
         science_goals=[L.escape_keep_math(g) for g in
                        (model.context.proposal.science_goals if model.context.proposal else [])],
@@ -115,10 +122,24 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
         group_reports=groups,
         sas_sections=sas_sections,
         sas_summary=sas_summary,
+        sas_appendix=sas_appendix,
         hypothesis_checks=hyp,
         discussion=L.escape_keep_math(model.discussion),
         caveats=[L.escape_keep_math(c) for c in model.caveats],
     )
+
+
+def _dspacing_sentence(o) -> str:
+    """State the repeat distance in the fit section when the model gives one."""
+    d = getattr(o, "d_spacing", None) or {}
+    if not d.get("d"):
+        return ""
+    err = f" $\\pm$ {_fmt(d['d_err'], 2)}" if d.get("d_err") else ""
+    return (f" Repeat distance from the fitted peak: "
+            f"$d = 2\\pi/Q_\\mathrm{{peak}}$ = {_fmt(d['d'], 4)}{err} "
+            f"$\\mathrm{{\\AA}}$ ({_fmt(d['d'] / 10, 3)} nm), "
+            f"from $Q_\\mathrm{{peak}}$ = {_fmt(d['q_peak'], 3)} "
+            f"$\\mathrm{{\\AA}}^{{-1}}$.")
 
 
 def _fmt(x, nd=4):
@@ -135,7 +156,8 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
     for o in model.sas_fits:
         attempts = "; ".join(
             f"{L.escape(a.get('model',''))} ("
-            f"{'accepted' if a.get('verdict')=='accept' else L.escape(str(a.get('verdict','?')).replace('_',' '))}"
+            f"{L.escape(str(a.get('verdict','?')).replace('_',' '))}"
+            + (f", score={_fmt(a.get('shape_score'),2)}" if a.get('shape_score') is not None else "")
             + (f", $\\chi^2_\\nu$={_fmt(a.get('reduced_chisq'),3)}" if a.get('reduced_chisq') else "")
             + ")"
             for a in o.attempts)
@@ -169,7 +191,7 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             "success": o.success,
             "model": L.escape(o.best.model_name) if o.best else "—",
             "model_description": L.escape_keep_math((o.model_description or "")[:2000]),
-            "fitted_fixed": fitted_fixed,
+            "fitted_fixed": fitted_fixed + _dspacing_sentence(o),
             "chisq": _fmt(o.best.reduced_chisq, 3) if (o.best and o.best.reduced_chisq) else "—",
             "rationale": L.escape_keep_math(o.rationale),
             "critique": L.escape_keep_math(o.critique),
@@ -208,6 +230,11 @@ def _member_fit_table(o):
             cells.append(f"{_fmt(v)} ± {_fmt(u)}" if (v is not None and u) else _fmt(v))
         cells.append(_fmt(f.get("reduced_chisq"), 3))
         rows.append(cells)
+    # Member and Condition often carry the same label (the group's independent
+    # variable IS the sample name). Two identical columns only cost width.
+    if rows and all(str(r[0]) == str(r[1]) for r in rows):
+        headers = [headers[0]] + headers[2:]
+        rows = [[r[0]] + r[2:] for r in rows]
     # many parameters -> shrink font and go landscape so it fits
     ncol = len(headers)
     fontsize = "scriptsize" if ncol > 6 else "footnotesize"
@@ -219,6 +246,80 @@ def _member_fit_table(o):
         label=f"tab:trend_{_safe(o.group_id)}",
         headers=headers, rows=rows,
         longtable=landscape, landscape=landscape, fontsize=fontsize)
+
+
+def _sas_candidate_table(o):
+    """Per-group candidate-comparison table: every model the fitter evaluated,
+    ranked by shape score (higher = better), with reduced chi^2, the critic
+    verdict, and any note (e.g. a parameter pinned at a bound)."""
+    if not o.attempts:
+        return None
+    ok = [a for a in o.attempts if a.get("ok")]
+    bad = [a for a in o.attempts if not a.get("ok")]
+    ok.sort(key=lambda a: a.get("shape_score") or 0.0, reverse=True)
+    rows = []
+    for a in ok + bad:
+        verdict = str(a.get("verdict", "—")).replace("_", " ")
+        # prefer the physics penalties (they explain any down-ranking); else the note
+        note = "; ".join(a.get("penalties") or []) or (a.get("note") or "")
+        rows.append([
+            a.get("model", "—"),
+            _fmt(a.get("shape_score"), 3) if a.get("shape_score") is not None else "—",
+            _fmt(a.get("reduced_chisq"), 3) if a.get("reduced_chisq") else "—",
+            verdict,
+            note[:90],
+        ])
+    return TableSpec(
+        caption=f"Candidate models evaluated for {o.label}, ranked by shape score "
+                "(higher is better). The shape score combines log-residual size, "
+                "slope/curvature agreement, feature-position (knee/bump/valley) "
+                "agreement, and residual randomness; the best-scoring model was chosen.",
+        label=f"tab:sascand_{_safe(o.group_id)}",
+        headers=["Model", "Shape score", "Reduced chi2", "Critic", "Note"],
+        rows=rows, fontsize="footnotesize")
+
+
+def _why_selected(o) -> str:
+    """One-paragraph, deterministic explanation of why the reported model won."""
+    if not o.best:
+        return "No candidate model produced a usable fit for this group."
+    win_name = o.best.model_name
+    ok = [a for a in o.attempts if a.get("ok")]
+    win = next((a for a in ok if a.get("model") == win_name), None)
+    win_score = (win or {}).get("shape_score")
+    runners = sorted((a for a in ok if a.get("model") != win_name),
+                     key=lambda a: a.get("shape_score") or 0.0, reverse=True)
+    s = f"Selected {win_name}"
+    if win_score is not None:
+        s += f": best shape score {_fmt(win_score, 2)}"
+        if o.best.reduced_chisq:
+            s += f" (reduced chi-squared {_fmt(o.best.reduced_chisq, 2)})"
+    if runners:
+        s += f", ahead of {runners[0].get('model')} ({_fmt(runners[0].get('shape_score'), 2)})"
+        if len(runners) > 1:
+            s += f" and {len(runners) - 1} other candidate(s)"
+    s += (". Ranking is by a shape-aware score — log-residual size, slope/curvature "
+          "agreement, and the positions of the knee/bump/valley features — so the "
+          "chosen model reproduces the measured curve shape most faithfully, not "
+          "merely the lowest chi-squared. ")
+    s += ("The critic accepted this fit." if o.success
+          else "The critic did not fully accept any candidate; this is the best available.")
+    return s
+
+
+def _build_sas_appendix(model: ReportModel, mode: str) -> list:
+    if mode != "comprehensive" or not model.sas_fits:
+        return []
+    out = []
+    for o in model.sas_fits:
+        out.append({
+            "title": L.escape(o.label or o.group_id),
+            "why": L.escape(_why_selected(o)),
+            "rationale": L.escape_keep_math(o.rationale or ""),
+            "critique": L.escape_keep_math(o.critique or ""),
+            "table": _sas_candidate_table(o),
+        })
+    return out
 
 
 def _build_sas_summary(model: ReportModel) -> dict | None:

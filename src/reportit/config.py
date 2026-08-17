@@ -9,10 +9,12 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_MODEL = "openai/gpt-5-mini"
-FALLBACK_MODEL = "google/gemini-3-flash-preview"
-DEFAULT_REASONING_MODEL = "z-ai/glm-5.2"      # text logic (model selection / critique)
-DEFAULT_VISION_MODEL = "google/gemini-3.5-flash"  # multimodal (inspect fit plots)
+_GEMINI_37_FLASH = "google/gemini-3.7-flash"   # text+image, tool-calling, 1M context
+
+DEFAULT_MODEL = _GEMINI_37_FLASH
+FALLBACK_MODEL = _GEMINI_37_FLASH
+DEFAULT_REASONING_MODEL = _GEMINI_37_FLASH     # text logic (model selection / critique)
+DEFAULT_VISION_MODEL = _GEMINI_37_FLASH        # multimodal (inspect fit plots)
 
 
 @dataclass

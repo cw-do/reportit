@@ -5,7 +5,10 @@ Also provides a deterministic fallback strategy for --no-llm runs.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
+from collections import defaultdict
 from pathlib import Path
 
 from ..llm import LLMClient
@@ -39,13 +42,7 @@ before deciding. Typical useful steps:
   - head_file to confirm data columns.
 
 Key decisions you must ground in evidence, not assumptions:
-  - If there are multiple output directories (e.g. output vs output_mask4 with \
-different detector masks), decide which to use, or whether to compare them, and \
-WHY (read NOTE.md and compare). STRONGLY prefer a variant that HAS combined/merged \
-extended-Q profiles (see the per-output-dir coverage in the inventory) — a variant \
-with only per-config 1D files and no merged data gives much worse plots and fits, \
-so do not pick it when a merged-bearing variant exists. Do not compare a \
-merged-bearing variant against one that lacks merged data.
+{variant_rule}
   - Decide curve_source: do combined/stitched 1D profiles exist (see the \
 inventory's combined-files list — names vary: merged_*, *_stitched, etc.)? If so, \
 prefer 'combined' (extended Q from joining configurations). If there are NONE, use \
@@ -70,9 +67,48 @@ scattering. This is often the right choice for single-chain or network solutions
 Be thorough — call as many tools as you need. When confident, call \
 `finalize_strategy` exactly once with a complete, well-justified strategy."""
 
+# The variant decision only exists when reportit discovered the data folders
+# itself. With --data the user has already chosen, so the rule is replaced by an
+# instruction NOT to spend tool calls re-litigating it.
+_VARIANT_RULE_DISCOVERED = """\
+  - If there are multiple output directories (e.g. output vs output_mask4 with \
+different detector masks), decide which to use, or whether to compare them, and \
+WHY (read NOTE.md and compare). STRONGLY prefer a variant that HAS combined/merged \
+extended-Q profiles (see the per-output-dir coverage in the inventory) — a variant \
+with only per-config 1D files and no merged data gives much worse plots and fits, \
+so do not pick it when a merged-bearing variant exists. Do not compare a \
+merged-bearing variant against one that lacks merged data."""
+
+_VARIANT_RULE_FIXED = """\
+  - The reduced-data directory is ALREADY FIXED (the user passed --data) and is \
+listed in the inventory. Do NOT look for, list, or evaluate any other output \
+directory, and do not spend tool calls on the variant question — it is settled. \
+Every dataset you can use is already returned by list_datasets. Leave \
+variant_decision empty and spend your effort on the science: what the samples \
+are, how to group them, and which fits make sense."""
+
+
+def _system_prompt(inv: FolderInventory) -> str:
+    return _SYSTEM.replace(
+        "{variant_rule}",
+        _VARIANT_RULE_FIXED if inv.data_dirs_fixed else _VARIANT_RULE_DISCOVERED)
+
 
 def _context_message(inv: FolderInventory, proposal: ProposalInfo) -> str:
-    lines = ["=== FOLDER INVENTORY ===", inv.as_text(), "", "=== PROPOSAL SUMMARY ==="]
+    lines = []
+    # Reference knowledge reaches the PLANNING agent too, not just the fitter:
+    # how to group samples and what is worth analysing is exactly the kind of
+    # judgement the operator teaches through the knowledge notes.
+    from ..analysis import knowledge
+    kb = knowledge.load_knowledge(
+        stage="strategy",
+        context=" ".join([inv.as_text()[:4000],
+                          getattr(proposal, "abstract_summary", "") or "",
+                          " ".join(getattr(proposal, "science_goals", None) or [])]))
+    if kb:
+        lines += ["=== REFERENCE KNOWLEDGE (general; applies to every experiment) ===",
+                  kb, ""]
+    lines += ["=== FOLDER INVENTORY ===", inv.as_text(), "", "=== PROPOSAL SUMMARY ==="]
     if proposal and proposal.available:
         lines.append(f"Title: {proposal.title}")
         lines.append(f"PI: {proposal.pi}")
@@ -99,21 +135,38 @@ def derive_strategy(
     catalog=None,
     max_steps: int = 30,
     on_step=None,
+    guide=None,
 ) -> AnalysisStrategy:
     if llm is None:
         return deterministic_strategy(datasets, inv)
 
-    probes = Probes(inv.shared_dir, datasets, catalog=catalog)
+    from .. import guidance
+
+    # the reduced-data dirs are readable too — with --data they may lie outside
+    # the target tree, and the agent still needs to inspect them.
+    probes = Probes(inv.shared_dir, datasets, catalog=catalog,
+                    extra_roots=list(inv.output_dirs))
+    # the data dirs are part of the cache identity: pointing --data somewhere else
+    # must re-derive the strategy, not reuse the previous folder's answer.
+    dirs_key = hashlib.sha1(
+        "|".join(sorted(str(p) for p in inv.output_dirs)).encode()).hexdigest()[:10]
+    # knowledge is part of the cache identity: teaching a new lesson must change
+    # the strategy, not replay the pre-lesson answer
+    from ..analysis import knowledge
+    kb_key = knowledge.digest("strategy")
     try:
         raw = llm.chat_with_tools(
-            system=_SYSTEM,
-            user=_context_message(inv, proposal),
+            system=_system_prompt(inv),
+            user=_context_message(inv, proposal) + guidance.hint_block(guide, "strategy"),
             tools=all_tools(),
             dispatch=probes.dispatch,
             finalize_tool=FINALIZE_TOOL,
             max_steps=max_steps,
             on_step=on_step,
-            cache_key=f"strategy:{inv.ipts}:{len(datasets)}:prop={int(bool(proposal and proposal.available))}",
+            cache_key=f"strategy:{inv.ipts}:{len(datasets)}:dirs={dirs_key}:"
+                      f"fixed={int(inv.data_dirs_fixed)}:"
+                      f"guide={guidance.digest(guide)}:kb={kb_key}:"
+                      f"prop={int(bool(proposal and proposal.available))}",
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("Strategy LLM loop failed (%s); using deterministic fallback", e)
@@ -166,11 +219,108 @@ def _parse_strategy(raw: dict, datasets: list[Dataset], inv: FolderInventory) ->
         ))
     if not strat.groups:  # safety net
         return deterministic_strategy(datasets, inv)
-    return strat
+    return _apply_grouping_guard(strat, datasets, inv)
 
 
 def _default_variants(inv: FolderInventory) -> list[str]:
-    return [p.name for p in inv.output_dirs] or ["output"]
+    from ..discovery.inventory import variant_labels
+    return sorted(variant_labels(inv.output_dirs).values()) or ["output"]
+
+
+# --------------------------------------------------------------------------- #
+# Grouping guard: the agentic strategy loop sometimes under-groups (finalises
+# after inspecting only a couple of series, leaving most samples ungrouped).
+# When coverage is poor, replace its groups with a deterministic series grouping
+# so EVERY science sample appears and related samples are compared. Merged
+# profiles are always preferred downstream, so this also restores merged plots.
+# --------------------------------------------------------------------------- #
+_SERIES_HYPHEN = re.compile(r"^(.*)-(\d+(?:\.\d+)?)$")   # salinity: 260K.D2O.5-0
+_SERIES_TRAIL = re.compile(r"^(.*?\D)(\d+(?:\.\d+)?)$")  # concentration: dP2VPNO.D2O.25, pb20
+
+
+def _series_stem(base: str) -> tuple[str, str | None]:
+    """Split a sample base into (series_stem, series_value) by stripping the one
+    varying series token — a salinity '-N' or a trailing concentration 'N'.
+    Config/thickness tokens after '_' (e.g. '1mm') are kept in the stem so
+    different thicknesses do not collapse together."""
+    if not base:
+        return base, None
+    parts = base.split("_")
+    head = parts[0]
+    val = None
+    m = _SERIES_HYPHEN.match(head) or _SERIES_TRAIL.match(head)
+    if m:
+        head, val = m.group(1), m.group(2)
+    return "_".join([head] + parts[1:]), val
+
+
+def _robust_groups(science: list[Dataset]) -> list[StrategyGroup]:
+    """Deterministic grouping: bucket by (series_stem, temperature); one member
+    per distinct sample base (preferring the merged-bearing one). Covers ALL
+    science datasets."""
+    buckets: dict[tuple, dict] = defaultdict(dict)  # (stem, temp) -> {base: ds}
+    for d in science:
+        if _is_background(d.base):
+            continue
+        stem, _ = _series_stem(d.base or d.output_name)
+        by_base = buckets[(stem, d.temperature or "")]
+        cur = by_base.get(d.base)
+        if cur is None or (d.merged_path and not cur.merged_path):
+            by_base[d.base] = d
+    groups: list[StrategyGroup] = []
+    for (stem, temp), by_base in buckets.items():
+        reps = list(by_base.values())
+        n = len(reps)
+        temps = {m.temperature for m in reps if m.temperature}
+        kind = ("concentration_series" if n >= 2
+                else "temperature_series" if len(temps) >= 2 else "single")
+        pretty = stem.rstrip("._-")
+        label = pretty + (" series" if kind == "concentration_series" else "") \
+            + (f" ({temp})" if temp else "")
+        groups.append(StrategyGroup(
+            group_id=_safe_id(f"{stem}_{temp}"), label=label, kind=kind,
+            members=[m.output_name for m in reps], comparison="iq1d",
+            ordering_key="concentration" if kind == "concentration_series" else None,
+            description=""))
+    groups.sort(key=lambda g: g.label)
+    return groups
+
+
+def _is_background(base: str) -> bool:
+    """Obvious solvent / empty-cell / background samples — not science groups."""
+    b = (base or "").lower()
+    return (b in {"d2o", "h2o", "banjo", "empty", "emptycell", "blank"}
+            or b.startswith(("bkg", "bkgd", "background", "buffer")))
+
+
+def _apply_grouping_guard(strat: AnalysisStrategy, datasets: list[Dataset],
+                          inv: FolderInventory) -> AnalysisStrategy:
+    used = set(strat.variant_decision.variants_used or _default_variants(inv))
+    science = [d for d in datasets if not d.is_standard and d.variant in used]
+    bases = {d.base for d in science}
+    if len(bases) < 3:
+        return strat  # too few samples for grouping to matter
+    name_to_base = {d.output_name: d.base for d in science}
+    covered = {name_to_base[m] for g in strat.groups for m in g.members
+               if m in name_to_base}
+    frac = len(covered) / len(bases)
+    if frac >= 0.8:
+        return strat  # LLM grouping covers the samples well enough
+    robust = _robust_groups(science)
+    if robust:
+        logger.warning("grouping guard: LLM covered %.0f%% of samples (%d/%d); "
+                       "using deterministic series grouping (%d groups)",
+                       100 * frac, len(covered), len(bases), len(robust))
+        strat.groups = robust
+        strat.caveats.append(
+            f"Grouping guard: the strategy step covered only {frac:.0%} of the "
+            f"measured samples, so a deterministic series grouping ({len(robust)} "
+            "groups) was used instead to compare all related samples.")
+    return strat
+
+
+def _safe_id(s: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "_", str(s)).strip("_").lower() or "group"
 
 
 # --------------------------------------------------------------------------- #
@@ -182,30 +332,12 @@ def deterministic_strategy(datasets: list[Dataset], inv: FolderInventory) -> Ana
     primary = variants[-1] if len(variants) > 1 else variants[0]  # prefer last (often newest)
 
     science = [d for d in datasets if not d.is_standard and d.variant == primary]
-    by_base: dict[str, list[Dataset]] = {}
-    for d in science:
-        by_base.setdefault(d.base, []).append(d)
-
-    groups: list[StrategyGroup] = []
-    fit_plans: list[FitPlan] = []
-    for base, members in sorted(by_base.items()):
-        temps = {m.temperature for m in members if m.temperature}
-        kind = "temperature_series" if len(temps) >= 2 else ("config_set" if len(members) > 1 else "single")
-        gid = f"grp_{base}"
-        groups.append(StrategyGroup(
-            group_id=gid,
-            label=f"Sample {base}" + (" (temperature series)" if kind == "temperature_series" else ""),
-            kind=kind,
-            members=[m.output_name for m in members],
-            comparison="iq1d",
-            ordering_key="temperature" if kind == "temperature_series" else None,
-            description="",
-        ))
-        fit_plans.append(FitPlan(group_id=gid, should_fit=False, model=None,
-                                 rationale="deterministic mode: no fitting"))
-
+    groups = _robust_groups(science)   # series grouping (salinity/concentration/temperature)
+    fit_plans = [FitPlan(group_id=g.group_id, should_fit=False, model=None,
+                         rationale="deterministic mode: no fitting") for g in groups]
+    n_bases = len({d.base for d in science})
     summary = (f"IPTS-{inv.ipts}: {len(science)} reduced datasets across "
-               f"{len(by_base)} samples (deterministic grouping; no LLM reasoning).")
+               f"{n_bases} samples (deterministic series grouping; no LLM reasoning).")
     return AnalysisStrategy(
         experiment_summary=summary,
         variant_decision=VariantDecision(variants_used=[primary], compare=False,

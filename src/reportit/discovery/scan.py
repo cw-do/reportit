@@ -16,7 +16,9 @@ from . import naming, reduction_json
 
 logger = logging.getLogger(__name__)
 
-_IQ1D_RE = re.compile(r"^(?P<name>.+)_Iq\.dat$", re.IGNORECASE)
+# Reduced 1D data. The extension is NOT meaningful — drtsans and hand-rolled
+# reduction scripts write .dat or .txt interchangeably — so accept both.
+_IQ1D_RE = re.compile(r"^(?P<name>.+)_Iq\.(?:dat|txt)$", re.IGNORECASE)
 
 # Tokens that mark a file as a COMBINED/stitched 1D profile (names vary by IPTS).
 COMBINE_WORDS = {"merged", "merge", "stitch", "stitched", "stitching",
@@ -72,8 +74,8 @@ def scan_dir(output_dir: Path, variant: str | None = None) -> list[Dataset]:
 
     for name, path in sorted(files.items()):
         m = _IQ1D_RE.match(name)
-        if not m:
-            continue
+        if not m or is_combined_name(name):
+            continue  # combined profiles are handled below, not as per-config data
         out_name = m.group("name")
 
         iqxqy = output_dir / f"{out_name}_Iqxqy.dat"
@@ -96,6 +98,32 @@ def scan_dir(output_dir: Path, variant: str | None = None) -> list[Dataset]:
             merged_path=merged_path,
             trans_path=trans_path if trans_path.is_file() else None,
             meta=meta,
+            is_standard=naming.is_standard(base),
+        ))
+
+    # A merged/combined profile is DATA in its own right. Normally it is attached
+    # to the per-config dataset above, but a folder may hold merged profiles ONLY
+    # (a merge-and-publish step writing to its own directory). Those files must
+    # still become datasets, otherwise such a folder scans as empty.
+    covered = {(d.base, d.temperature) for d in datasets}
+    for name, path in sorted(files.items()):
+        if not is_combined_name(name):
+            continue
+        base, temp = parse_combined(name)
+        if base is None or (base, temp) in covered:
+            continue
+        covered.add((base, temp))
+        out_name = re.sub(r"\.\w+$", "", name)
+        out_name = re.sub(r"_?[Ii]q$", "", out_name)
+        _b, _t, config = naming.parse_sample_name(out_name)
+        datasets.append(Dataset(
+            output_name=out_name,
+            variant=variant,
+            base=base,
+            temperature=temp,
+            config=config,
+            iq_path=path,          # the merged profile IS this dataset's 1D curve
+            merged_path=path,
             is_standard=naming.is_standard(base),
         ))
 

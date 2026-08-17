@@ -8,8 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from . import __version__
 from .cache import Cache
 from .config import AppSettings
+from . import guidance, shortnames
 from .discovery import inventory, scan
 from .execute.runner import Runner
 from .integrations import oncat
@@ -51,10 +53,16 @@ def run_report(
     strategy_only: bool = False,
     refresh: bool = False,
     sasfit: bool = True,
+    summary_only: bool = False,
     proposal_path: Optional[str] = None,
+    data_dirs: Optional[list[str]] = None,
+    user_guide: Optional[str] = None,
     max_llm_steps: Optional[int] = None,
 ) -> RunResult:
-    out_dir = Path(out_dir)
+    # resolve to an ABSOLUTE path: figure paths are derived from out_dir and
+    # embedded in the .tex, but pdflatex runs with cwd=out_dir — a relative
+    # out_dir would make those figure paths unresolvable at compile time.
+    out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     # --refresh busts ALL caches (LLM, strategy, sasfit, proposal, ONCat): every
     # read misses and recomputes, then rewrites the cache for next time.
@@ -71,14 +79,25 @@ def run_report(
             logger.warning("No OPENROUTER_API_KEY found — running in --no-llm mode.")
 
     # 1) inventory
+    logger.info("reportit %s", __version__)
     logger.info("Building inventory for %s ...", target)
     inv = inventory.build(target)
     ctx = ExperimentContext(ipts=inv.ipts, shared_dir=inv.shared_dir, inventory=inv)
 
+    # 1b) explicit reduced-data folder(s) override auto-discovery
+    if data_dirs:
+        inv, problems = inventory.restrict_output_dirs(inv, data_dirs)
+        for msg in problems:
+            logger.warning("%s", msg)
+            ctx.degraded.append(msg)
+        logger.info("Using specified reduced-data dir(s): %s",
+                    ", ".join(str(p) for p in inv.output_dirs))
+
     # 2) scan datasets across all candidate output dirs (variants)
     datasets = []
+    labels = inventory.variant_labels(inv.output_dirs)
     for odir in inv.output_dirs:
-        datasets.extend(scan.scan_dir(odir, odir.name))
+        datasets.extend(scan.scan_dir(odir, labels[odir]))
     ctx.datasets = datasets
     logger.info("Discovered %d datasets across %d variant dir(s).",
                 len(datasets), len(inv.output_dirs))
@@ -92,6 +111,30 @@ def run_report(
         ctx.degraded.append("ONCat catalog unavailable — titles inferred from filenames.")
     else:
         _fill_titles(datasets, catalog)
+
+    # 3b) interpret the user's free-text directive and apply its data-selection
+    # part NOW — after ONCat titles exist (rules may reference sample titles) and
+    # before anything else runs, so every later stage sees an already-narrowed
+    # dataset list rather than an instruction it might ignore.
+    guide = guidance.interpret(user_guide or "", llm, datasets)
+    if guide.active:
+        logger.info("User guidance: %s", guide.interpretation or guide.text)
+        datasets = guidance.apply_to_datasets(guide, datasets)
+        ctx.datasets = datasets
+        if not datasets:
+            ctx.degraded.append("No datasets left after applying --userguide.")
+
+    # 3c) short display names: EQSANS output names encode the whole reduction,
+    # which overflows tables and swamps plot legends. Derived ONCE here so
+    # tables, figures and fit labels all use the same labels, with a legend
+    # table in the report mapping each back to its file.
+    # built per collection: output names and bases have different shared
+    # affixes, and mixing them into one call defeats the detection entirely
+    namemap = shortnames.build([d.output_name for d in datasets])
+    namemap.update(shortnames.build([d.base for d in datasets]))
+    if namemap.active:
+        logger.info("Using short display names for %d long output name(s).",
+                    len(namemap.pairs()))
 
     # 4) proposal — user-specified folder/file, else auto-discovered from shared/
     proposal = ProposalInfo()
@@ -110,17 +153,54 @@ def run_report(
         ctx.degraded.append("No proposal document found.")
     ctx.proposal = proposal
 
+    # 4b) is this experiment about a periodic repeat distance? If the proposal
+    # says so, the report should answer that question directly: find the
+    # correlation peak and convert it to d = 2*pi/Q_peak.
+    from .analysis import dspacing
+    d_intent = dspacing.detect(proposal)
+    if d_intent.wanted:
+        logger.info("Repeat-distance experiment detected (%s) — peaks will be "
+                    "located and converted to d = 2*pi/Q_peak.",
+                    ", ".join(d_intent.terms[:4]))
+        if d_intent.q_window:
+            logger.info("  using Q window %.4g-%.4g 1/A (%s)",
+                        d_intent.q_window[0], d_intent.q_window[1], d_intent.source)
+
+    # Record which reference-knowledge notes this run reasoned from, so a report
+    # is auditable: "why did it choose that?" is answerable months later.
+    from .analysis import knowledge as _kb
+    _notes = _kb.load_notes()
+    if _notes and llm is not None:
+        per_stage = {st: _kb.used_names(st) for st in _kb.STAGES}
+        logger.info("Reference knowledge: %d note(s) available — %s",
+                    len(_notes), ", ".join(n.name for n in _notes))
+        ctx.degraded.append(
+            "Reference knowledge used: "
+            + "; ".join(f"{st}: {', '.join(v) or 'none'}" for st, v in per_stage.items())
+            + ". Teach reportit more with `reportit --learn \"...\"`.")
+
     # 5) strategy (agentic LLM or deterministic)
     logger.info("Deriving analysis strategy (%s)...", "LLM" if llm else "deterministic")
     strategy = engine.derive_strategy(inv, datasets, proposal, llm, catalog=catalog,
-                                      max_steps=steps, on_step=_log_step)
+                                      max_steps=steps, on_step=_log_step,
+                                      guide=guide)
     ctx.degraded.extend(strategy.caveats)
 
-    # Guardrail: merged/combined extended-Q profiles are always preferred. If the
-    # chosen variant(s) lack them but another variant has them, restrict the
-    # analysis to the merged-bearing variant(s). Only fall back to a variant
-    # without merged when NO variant has any (then per-config curves are correct).
-    _enforce_merged_variant(strategy, datasets, ctx)
+    if data_dirs:
+        # The user named the reduced-data folder(s) explicitly — that decision
+        # outranks both the LLM's variant choice and the merged-data guardrail.
+        chosen = sorted(labels.values())
+        strategy.variant_decision.variants_used = chosen
+        strategy.variant_decision.compare = len(chosen) > 1
+        strategy.variant_decision.rationale = (
+            "Reduced-data folder(s) specified on the command line: "
+            + ", ".join(str(p) for p in inv.output_dirs))
+    else:
+        # Guardrail: merged/combined extended-Q profiles are always preferred. If the
+        # chosen variant(s) lack them but another variant has them, restrict the
+        # analysis to the merged-bearing variant(s). Only fall back to a variant
+        # without merged when NO variant has any (then per-config curves are correct).
+        _enforce_merged_variant(strategy, datasets, ctx)
 
     if strategy_only:
         _print_strategy(strategy)
@@ -128,7 +208,8 @@ def run_report(
 
     # 6) execute → group reports
     logger.info("Executing strategy: %d group(s)...", len(strategy.groups))
-    runner = Runner(datasets, out_dir / "figures")
+    runner = Runner(datasets, out_dir / "figures", namemap=namemap,
+                    d_intent=d_intent)
     group_reports = runner.run(strategy)
 
     # 7) per-group observations (grounded in the actual plot + experiment context)
@@ -136,7 +217,8 @@ def run_report(
     if proposal and proposal.science_goals:
         obs_context += " Goals: " + "; ".join(proposal.science_goals)
     for gr in group_reports:
-        gr.observations = synthesize.observe_group(gr, llm, context=obs_context)
+        gr.observations = synthesize.observe_group(gr, llm, context=obs_context,
+                                                   guide=guide)
 
     # 7b) agentic model-based fitting (sasmodels) — opt-in
     sas_outcomes = []
@@ -166,7 +248,8 @@ def run_report(
                         idx, total, g.group_id, len(members))
             try:
                 outcome = sas_agent.run_group_fit(
-                    g, members, llm, fig_dir, strategy.experiment_summary)
+                    g, members, llm, fig_dir, strategy.experiment_summary,
+                    guide=guide, namemap=namemap, d_intent=d_intent)
                 sas_outcomes.append(outcome)
                 model = outcome.best.model_name if outcome.best else "none"
                 logger.info("sasfit: [%d/%d] %s -> %s (%s)", idx, total, g.group_id,
@@ -174,23 +257,36 @@ def run_report(
             except Exception as e:  # noqa: BLE001
                 logger.warning("sasfit: [%d/%d] failed for %s: %s", idx, total, g.group_id, e)
 
+        # fitting notebook: a Markdown audit trail of what the fitter tried and
+        # why, kept next to the report (can be long with many groups — intended)
+        if sas_outcomes:
+            try:
+                from .analysis import fit_notebook
+                nb = fit_notebook.write(sas_outcomes, out_dir / "sasfit_notebook.md")
+                if nb:
+                    logger.info("sasfit: wrote fitting notebook %s", nb)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("sasfit: could not write fitting notebook: %s", e)
+
     # 8) global narrative + hypothesis checks
     overview, discussion, checks = synthesize.global_narrative(
-        strategy, group_reports, proposal, llm)
+        strategy, group_reports, proposal, llm, guide=guide)
 
     # 9) build report model
-    caveats = list(ctx.degraded) + list(strategy.caveats)
+    caveats = list(ctx.degraded) + list(strategy.caveats) + guidance.summary_lines(guide)
     if strategy.variant_decision.rationale:
         caveats.append("Variant choice: " + strategy.variant_decision.rationale)
     appendix = [t for t in (
-        tables.build_reduction_table(datasets, strategy),
+        tables.build_name_map_table(namemap),
+        tables.build_reduction_table(datasets, strategy, namemap=namemap),
         tables.build_catalog_table(catalog),
     ) if t is not None]
     model = ReportModel(
         context=ctx,
         title=_title(ctx, proposal),
         overview=overview or strategy.experiment_summary,
-        catalog_table=tables.build_sample_summary(datasets, strategy, proposal),
+        catalog_table=tables.build_sample_summary(datasets, strategy, proposal,
+                                                  namemap=namemap),
         appendix_tables=appendix,
         group_reports=group_reports,
         sas_fits=sas_outcomes,
@@ -199,11 +295,14 @@ def run_report(
         caveats=_dedupe(caveats),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         model_name=(settings.llm.model if llm else "deterministic"),
+        reportit_version=__version__,
+        namemap=namemap,
     )
 
-    # 10) assemble + compile two PDFs
+    # 10) assemble + compile PDFs (both by default; only the summary if requested)
     pdfs, tex_files = [], []
-    for mode in ("comprehensive", "summary"):
+    modes = ("summary",) if summary_only else ("comprehensive", "summary")
+    for mode in modes:
         tex = assemble.write_tex(model, out_dir, mode)
         tex_files.append(tex)
         pdf = texcompile.compile_pdf(tex)

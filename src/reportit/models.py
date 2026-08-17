@@ -36,6 +36,10 @@ class FolderInventory:
     combined_examples: list[str] = field(default_factory=list)  # merged/stitched 1D files
     variant_summary: list[str] = field(default_factory=list)  # per output dir: 1D + combined counts
     total_files: int = 0
+    # True when the user named the reduced-data folder(s) with --data: there is
+    # no variant choice left to make, so the digest and the strategy prompt drop
+    # the deliberation instead of spending agent steps on a settled question.
+    data_dirs_fixed: bool = False
 
     def as_text(self) -> str:
         def block(title: str, items: list) -> list[str]:
@@ -58,7 +62,11 @@ class FolderInventory:
             "File counts by extension: "
             + ", ".join(f"{k}={v}" for k, v in sorted(self.ext_counts.items())),
             "",
-            *block("Candidate output/data directories:", self.output_dirs),
+            *(block("Reduced-data directory FIXED by the user (--data) — this is "
+                    "the data to analyze; there is NO variant choice to make and "
+                    "no other directory to consider:", self.output_dirs)
+              if self.data_dirs_fixed else
+              block("Candidate output/data directories:", self.output_dirs)),
             "",
             *block("Proposal PDFs:", self.proposal_pdfs),
             "",
@@ -73,7 +81,8 @@ class FolderInventory:
                    "— may be 'merged', 'stitched', etc.; EMPTY means none exist):",
                    self.combined_examples),
             "",
-            *block("Per output-dir data coverage (PREFER a variant that HAS combined "
+            *block("Per output-dir data coverage:" if self.data_dirs_fixed else
+                   "Per output-dir data coverage (PREFER a variant that HAS combined "
                    "extended-Q profiles — they are essential for analysis):",
                    self.variant_summary),
         ]
@@ -247,6 +256,44 @@ class SasFitOutcome:
     #                                                    params, uncertainties, reduced_chisq}]
     trend_param: str = ""          # the parameter trended (e.g. "rg")
     trend_figure: Optional["FigureRef"] = None
+    descriptors: dict = field(default_factory=dict)  # observed curve shape (for the notebook)
+    # repeat distance d = 2*pi/Q_peak from the fitted peak parameter, when the
+    # chosen model has one (broad_peak, gaussian_peak, lamellar, ...)
+    d_spacing: dict = field(default_factory=dict)
+
+
+@dataclass
+class Guidance:
+    """A user's free-text analysis directive (`--userguide`), interpreted into
+    concrete actions and routed to the pipeline stages it actually affects.
+
+    The deterministic parts (which datasets to keep) are applied as real filters
+    in code, so downstream stages receive an already-narrowed file list rather
+    than a request they might ignore. The rest travels as per-stage hints.
+    """
+
+    text: str = ""                 # verbatim, what the user typed
+    interpretation: str = ""       # plain-language reading, echoed to user + report
+    stages: list[str] = field(default_factory=list)   # stages it was routed to
+
+    # deterministic dataset selection
+    merged_only: bool = False
+    include_patterns: list[str] = field(default_factory=list)
+    exclude_patterns: list[str] = field(default_factory=list)
+
+    # free-text hints handed to the LLM stage that needs them
+    strategy_hint: str = ""
+    fitting_hint: str = ""
+    narrative_hint: str = ""
+
+    # what actually happened, recorded for the report
+    applied_notes: list[str] = field(default_factory=list)
+    kept_names: list[str] = field(default_factory=list)
+    dropped_names: list[str] = field(default_factory=list)
+
+    @property
+    def active(self) -> bool:
+        return bool((self.text or "").strip())
 
 
 @dataclass
@@ -301,6 +348,9 @@ class GroupReport:
     table: Optional[TableSpec] = None
     analyses: list[DatasetAnalysis] = field(default_factory=list)
     observations: str = ""
+    # additional tables shown under the group (e.g. repeat distance)
+    extra_tables: list = field(default_factory=list)
+
 
 
 @dataclass
@@ -329,3 +379,5 @@ class ReportModel:
     caveats: list[str] = field(default_factory=list)
     generated_at: str = ""
     model_name: str = ""
+    reportit_version: str = ""   # which reportit produced this report
+    namemap: Any = None          # shortnames.NameMap for display labels
