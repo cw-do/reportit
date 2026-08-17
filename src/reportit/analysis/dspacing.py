@@ -86,6 +86,17 @@ class Peak:
     snr: float
     method: str = "model-free"
     d_err: float | None = None
+    width_q: float | None = None    # FWHM in Q (1/A)
+    q_err: float | None = None
+    width_err: float | None = None
+    amplitude: float | None = None
+
+    @property
+    def width_d(self) -> float | None:
+        """Spread in real space implied by the peak width (dd ~ 2*pi*dQ/Q^2)."""
+        if not self.width_q or self.q <= 0:
+            return None
+        return 2 * math.pi * self.width_q / self.q ** 2
 
 
 def d_of_q(q: float) -> float:
@@ -225,6 +236,103 @@ def find_peak(q, i, q_window: tuple[float, float] | None = None, *,
     return Peak(q=q_peak, d=d_of_q(q_peak), snr=float(prom / noise))
 
 
+def find_peaks(q, i, q_window: tuple[float, float] | None = None, *,
+               min_snr: float = 2.5, baseline_deg: int = 4,
+               min_sep_dex: float = 0.06, max_peaks: int = 6) -> list[Peak]:
+    """ALL correlation peaks in a curve, strongest first.
+
+    A stacked/lamellar system does not give one peak: there is a dominant order
+    plus weaker ones, and describing them with a single broad component (as a
+    lone `broad_peak` fit does) smears real structure into one wide feature. So
+    every local maximum of the background-subtracted residual that clears
+    ``min_snr`` is reported, subject to a minimum separation of ``min_sep_dex``
+    decades in Q so one peak is not counted twice.
+
+    Widths here are rough (from the half-maximum crossings of the residual);
+    :func:`fit_peak_model` refines position AND width properly by least squares.
+    """
+    prep = _residual(q, i, q_window, baseline_deg)
+    if prep is None:
+        return []
+    qs, smooth, noise = prep
+    if noise <= 0:
+        return []
+    lqs = np.log10(qs)
+    found: list[Peak] = []
+    for j in range(1, smooth.size - 1):
+        if not (smooth[j] > smooth[j - 1] and smooth[j] >= smooth[j + 1]):
+            continue
+        prom = float(smooth[j] - 0.5 * (smooth[:j].min() + smooth[j:].min()))
+        snr = prom / noise
+        if snr < min_snr:
+            continue
+        # parabolic refinement in log Q
+        y0, y1, y2 = smooth[j - 1], smooth[j], smooth[j + 1]
+        den = y0 - 2 * y1 + y2
+        dx = 0.5 * (y0 - y2) / den if den else 0.0
+        dx = max(-1.0, min(1.0, dx))
+        qp = float(10 ** (lqs[j] + dx * (lqs[j + 1] - lqs[j - 1]) / 2))
+        found.append(Peak(q=qp, d=d_of_q(qp), snr=float(snr),
+                          width_q=_half_width(qs, smooth, j)))
+    found.sort(key=lambda p: p.snr, reverse=True)
+    kept: list[Peak] = []
+    for p in found:
+        if any(abs(np.log10(p.q) - np.log10(k.q)) < min_sep_dex for k in kept):
+            continue
+        kept.append(p)
+        if len(kept) >= max_peaks:
+            break
+    kept.sort(key=lambda p: p.q)
+    return kept
+
+
+def _half_width(qs, smooth, j) -> float | None:
+    """Rough FWHM in Q from the half-maximum crossings around index ``j``."""
+    half = smooth[j] - 0.5 * (smooth[j] - min(smooth.min(), 0.0))
+    lo = hi = None
+    for a in range(j, 0, -1):
+        if smooth[a] <= half:
+            lo = qs[a]
+            break
+    for b in range(j, smooth.size):
+        if smooth[b] <= half:
+            hi = qs[b]
+            break
+    if lo is None or hi is None or hi <= lo:
+        return None
+    return float(hi - lo)
+
+
+def _residual(q, i, q_window, baseline_deg):
+    """(qs, smoothed residual, noise) after removing a smooth log-log baseline."""
+    q = np.asarray(q, float)
+    i = np.asarray(i, float)
+    m = np.isfinite(q) & np.isfinite(i) & (q > 0) & (i > 0)
+    q, i = q[m], i[m]
+    o = np.argsort(q)
+    q, i = q[o], i[o]
+    if q_window is None:
+        q_window = default_window(q)
+    lo, hi = q_window
+    sel = (q >= lo) & (q <= hi)
+    if sel.sum() >= 10:
+        q, i = q[sel], i[sel]
+    if q.size < 10:
+        return None
+    lq, li = np.log10(q), np.log10(i)
+    try:
+        r = li - np.polyval(np.polyfit(lq, li, baseline_deg), lq)
+    except Exception:  # noqa: BLE001
+        return None
+    k = 5
+    if r.size < k + 4:
+        return None
+    smooth = np.convolve(r, np.ones(k) / k, mode="valid")
+    qs = q[k // 2: q.size - k // 2]
+    noise = float(np.std(r - np.interp(q, qs, smooth)))
+    return qs, smooth, noise
+
+
 # --------------------------------------------------------------------------- #
 # 3) peak position from a fitted model
 # --------------------------------------------------------------------------- #
@@ -277,9 +385,19 @@ def prompt_hint(intent: Intent) -> str:
         "distance (d = 2*pi/Q_peak), so the SCIENTIFICALLY IMPORTANT feature is the "
         "position of the correlation/Bragg peak, not merely the overall decay. "
         "Include at least one peak-bearing model among your candidates "
-        f"({', '.join(PEAK_MODELS[:4])}) so the peak position is actually fitted and "
-        "reported with an uncertainty, and do NOT choose a Q-window that cuts the "
-        "peak out." + win
+        f"({', '.join(PEAK_MODELS[:4])}), and do NOT choose a Q-window that cuts "
+        "the peak out.\n"
+        "COUNT THE PEAKS FIRST. A stacked/lamellar system commonly shows SEVERAL "
+        "finer peaks — one dominant plus weaker ones. A single broad_peak component "
+        "will happily fit ONE wide bump straight across all of them: that is a "
+        "misfit, and the position and width it reports belong to no actual peak. If "
+        "the curve has more than one peak, say so and prefer a description that "
+        "gives EACH peak its own position and width (an empirical correlation-type "
+        "background plus one Gaussian per peak has already been fitted for this "
+        "curve and is reported separately). Where the peak positions and widths are "
+        "already measured that way, a further single-model sasmodels fit adds "
+        "little — judge candidates on whether they reproduce the peak STRUCTURE, "
+        "and say plainly if none does." + win
     )
 
 
@@ -287,7 +405,12 @@ def prompt_hint(intent: Intent) -> str:
 # 4) per-group reporting
 # --------------------------------------------------------------------------- #
 def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
-    """Model-free peak + d-spacing for each member of a group."""
+    """Every resolved peak of every member: position, width, and d = 2*pi/Q.
+
+    Uses the empirical background + Gaussian-peaks fit, so a stacked system with
+    several finer peaks is described peak by peak rather than smeared into one
+    broad component.
+    """
     from .loaders import load_iq
     short = namemap.short if namemap is not None else (lambda x: x)
     rows = []
@@ -300,14 +423,22 @@ def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
         except Exception as e:  # noqa: BLE001
             logger.debug("d-spacing: could not load %s: %s", ds.output_name, e)
             continue
-        pk = find_peak(iq.mod_q, iq.intensity, intent.q_window)
-        rows.append({
-            "name": short(ds.output_name),
-            "condition": ds.temperature or "",
-            "q_peak": pk.q if pk else None,
-            "d": pk.d if pk else None,
-            "snr": pk.snr if pk else None,
-        })
+        fit = fit_peak_model(iq.mod_q, iq.intensity, getattr(iq, "error", None),
+                             q_window=intent.q_window)
+        if not fit.ok or not fit.peaks:
+            rows.append({"name": short(ds.output_name), "order": None,
+                         "q_peak": None, "d": None, "width_q": None,
+                         "log_rms": fit.log_rms})
+            continue
+        for k, pk in enumerate(fit.peaks, 1):
+            rows.append({
+                "name": short(ds.output_name),
+                "order": k, "n_peaks": fit.n_peaks,
+                "q_peak": pk.q, "q_err": pk.q_err,
+                "d": pk.d, "d_err": pk.d_err,
+                "width_q": pk.width_q, "width_err": pk.width_err,
+                "log_rms": fit.log_rms,
+            })
     return rows
 
 
@@ -316,19 +447,244 @@ def build_table(group_label: str, group_id: str, rows: list[dict]):
     from ..models import TableSpec
     if not rows or not any(r.get("d") for r in rows):
         return None
+    def _pm(v, e, nd=4):
+        if v is None:
+            return "—"
+        return f"{v:.{nd}f} ± {e:.{nd}f}" if e else f"{v:.{nd}f}"
+
     body = []
     for r in rows:
-        if r.get("d"):
-            body.append([r["name"], f"{r['q_peak']:.4f}", f"{r['d']:.1f}",
-                         f"{r['d'] / 10:.1f}", f"{r['snr']:.1f}"])
-        else:
-            body.append([r["name"], "—", "—", "—", "—"])
+        if not r.get("d"):
+            body.append([r["name"], "—", "—", "—", "—", "—"])
+            continue
+        body.append([
+            r["name"],
+            str(r.get("order") or 1),
+            _pm(r.get("q_peak"), r.get("q_err")),
+            _pm(r.get("d"), r.get("d_err"), 1),
+            f"{r['d'] / 10:.1f}",
+            _pm(r.get("width_q"), r.get("width_err")),
+        ])
     return TableSpec(
-        caption=(f"Repeat distance for {group_label}: the correlation-peak position "
-                 r"$Q_\mathrm{peak}$ located model-free (background removed in "
-                 r"log-log), and the real-space repeat $d = 2\pi/Q_\mathrm{peak}$. "
-                 "SNR is the peak height over the local point-to-point scatter; a "
-                 "dash means no peak stood clearly above the noise."),
+        caption=(f"Peaks resolved for {group_label}. The curve is described "
+                 "empirically as a correlation-type background plus one Gaussian "
+                 "per peak, so each peak gets its OWN position and width rather "
+                 "than being absorbed into a single broad component. "
+                 r"$d = 2\pi/Q_\mathrm{peak}$ is the real-space repeat; the width "
+                 "is the fitted FWHM in Q (a broader peak means a less ordered, "
+                 "more widely distributed spacing). Values are given with their "
+                 "1-sigma fit uncertainties; a dash means no peak was resolved "
+                 "well enough to quote."),
         label=f"tab:dspacing_{re.sub(r'[^0-9A-Za-z]+', '_', group_id)}",
-        headers=["Member", "Q_peak (1/A)", "d (A)", "d (nm)", "SNR"],
-        rows=body, fontsize="footnotesize", colspec="l r r r r")
+        headers=["Member", "Peak", "Q_peak (1/A)", "d (A)", "d (nm)", "FWHM (1/A)"],
+        rows=body, fontsize="footnotesize", colspec="l c r r r r")
+
+
+# --------------------------------------------------------------------------- #
+# 5) empirical multi-peak fit: correlation background + N Gaussian peaks
+# --------------------------------------------------------------------------- #
+@dataclass
+class MultiPeakFit:
+    """An empirical description of a curve as background + N Gaussian peaks."""
+
+    n_peaks: int = 0
+    peaks: list = field(default_factory=list)     # list[Peak], low-Q first
+    # RMS of log10(data) - log10(model): the vertical gap a human sees. A real
+    # reduced chi-squared is not quoted because the fit is done in log space with
+    # normalised weights, where it would not mean what the name implies.
+    log_rms: float | None = None
+    bic: float | None = None
+    q: object = None                              # arrays for plotting
+    i_data: object = None
+    i_model: object = None
+    background: object = None
+    ok: bool = False
+    note: str = ""
+
+
+def _bg_model(q, logA, n, logC, xi, m, logB):
+    """correlation_length-style background: Porod + Lorentzian + flat."""
+    A, C, B = 10.0 ** logA, 10.0 ** logC, 10.0 ** logB
+    return A * q ** (-n) + C / (1.0 + (q * xi) ** m) + B
+
+
+def _full_model(q, p, n_peaks):
+    out = _bg_model(q, *p[:6])
+    for k in range(n_peaks):
+        amp, q0, logs = p[6 + 3 * k: 9 + 3 * k]
+        sig = 10.0 ** logs
+        out = out + abs(amp) * np.exp(-0.5 * ((q - q0) / sig) ** 2)
+    return out
+
+
+def fit_peak_model(q, i, err=None, *, q_window=None, max_peaks: int = 4,
+                   seed_peaks: list | None = None) -> MultiPeakFit:
+    """Fit background + N Gaussian peaks and pick N empirically.
+
+    Rationale (operator feedback): a stacked system shows SEVERAL finer peaks. A
+    single `broad_peak` component fits one wide bump across all of them, which
+    smears real structure and reports a position and width that belong to no
+    actual peak. Describing the curve as a correlation-type background plus a
+    Gaussian per peak is empirical but honest: every peak gets its own position
+    and width, each with an uncertainty.
+
+    N is chosen by BIC, so an extra peak has to earn its parameters rather than
+    simply lowering chi-squared.
+    """
+    from scipy.optimize import least_squares
+
+    q = np.asarray(q, float)
+    i = np.asarray(i, float)
+    e = np.asarray(err, float) if err is not None else None
+    m = np.isfinite(q) & np.isfinite(i) & (q > 0) & (i > 0)
+    if e is not None:
+        m &= np.isfinite(e)
+    q, i = q[m], i[m]
+    e = e[m] if e is not None else None
+    o = np.argsort(q)
+    q, i = q[o], i[o]
+    e = e[o] if e is not None else None
+    # Fit over the SAME window the peaks are sought in. Fitting the full range
+    # while seeding from a window makes the background work hard on the noisy
+    # tail, and the peak terms then look unnecessary to the model-selection
+    # criterion — peaks that are plainly visible get dropped.
+    if q_window is None:
+        q_window = default_window(q)
+    lo, hi = q_window
+    sel = (q >= lo) & (q <= hi)
+    if sel.sum() >= 15:
+        q, i, e = q[sel], i[sel], (e[sel] if e is not None else None)
+    if q.size < 15:
+        return MultiPeakFit(note="too few points")
+
+    li = np.log10(i)
+    # weight by the relative error, in log space; floor keeps a few good points
+    # from dominating the whole fit
+    if e is not None and np.all(e >= 0):
+        rel = np.clip(e / np.maximum(i, 1e-30), 0.005, 1.0)
+        w = 1.0 / (rel / np.log(10))
+    else:
+        w = np.ones_like(q)
+    w = w / np.median(w)
+
+    seeds = list(seed_peaks or find_peaks(q, i, q_window))
+    cands: list[MultiPeakFit] = []
+
+    for n_peaks in range(0, min(max_peaks, len(seeds)) + 1):
+        p0, lo_b, hi_b = _seed_params(q, i, seeds[:n_peaks])
+        try:
+            res = least_squares(
+                lambda p: (np.log10(np.maximum(_full_model(q, p, n_peaks), 1e-30)) - li) * w,
+                p0, bounds=(lo_b, hi_b), max_nfev=4000)
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("multi-peak fit n=%d failed: %s", n_peaks, ex)
+            continue
+        npar = len(p0)
+        chi2 = float(np.sum(res.fun ** 2))
+        bic = q.size * np.log(chi2 / q.size) + npar * np.log(q.size)
+        model = _full_model(q, res.x, n_peaks)
+        peaks = _keep_real_peaks(_peaks_from_params(res, n_peaks), q)
+        log_rms = float(np.sqrt(np.mean(
+            (np.log10(np.maximum(model, 1e-30)) - li) ** 2)))
+        note = ""
+        if len(peaks) < n_peaks:
+            note = (f"{n_peaks - len(peaks)} fitted component(s) rejected as "
+                    "background rather than resolved peaks")
+        cands.append(MultiPeakFit(
+            n_peaks=len(peaks), log_rms=log_rms, bic=float(bic),
+            q=q, i_data=i, i_model=model,
+            background=_bg_model(q, *res.x[:6]), ok=True, peaks=peaks, note=note))
+
+    if not cands:
+        return MultiPeakFit(note="all fits failed")
+    # Prefer a fit whose every component survived as a real peak; among those the
+    # best BIC wins. Only if none is clean do we fall back to the best BIC overall
+    # and report the components that did survive.
+    clean = [c for c in cands if not c.note]
+    best = min(clean or cands, key=lambda c: c.bic if c.bic is not None else np.inf)
+    best.peaks.sort(key=lambda p: p.q)
+    return best
+
+
+def _seed_params(q, i, seeds):
+    """Initial values and bounds for the composite model."""
+    qmin, qmax = float(q.min()), float(q.max())
+    imax = float(np.max(i))
+    imin = max(float(np.min(i)), 1e-12)
+    p0 = [np.log10(max(imax * qmin ** 3, 1e-12)), 3.0,
+          np.log10(max(imax * 0.1, 1e-12)), 1.0 / max(qmin, 1e-6) / 10, 2.0,
+          np.log10(imin)]
+    lo = [-30.0, 0.0, -30.0, 1.0, 0.5, -30.0]
+    hi = [30.0, 6.0, 30.0, 1e5, 8.0, np.log10(max(imax, 1e-9))]
+    for pk in seeds:
+        amp = max(imax * 0.05, 1e-12)
+        sig = (pk.width_q / 2.355) if pk.width_q else (pk.q * 0.1)
+        sig = max(sig, (qmax - qmin) / 200.0)
+        p0 += [amp, float(pk.q), float(np.log10(sig))]
+        lo += [0.0, max(qmin, pk.q * 0.7), np.log10((qmax - qmin) / 400.0)]
+        hi += [imax * 50, min(qmax, pk.q * 1.4), np.log10((qmax - qmin) / 3.0)]
+    return np.array(p0, float), np.array(lo, float), np.array(hi, float)
+
+
+def _peaks_from_params(res, n_peaks) -> list:
+    """Peaks with 1-sigma errors from the least-squares Jacobian."""
+    perr = _param_errors(res)
+    out = []
+    for k in range(n_peaks):
+        amp, q0, logs = res.x[6 + 3 * k: 9 + 3 * k]
+        sig = 10.0 ** logs
+        fwhm = 2.3548 * sig
+        q0e = perr[7 + 3 * k] if perr is not None else None
+        se = (perr[8 + 3 * k] if perr is not None else None)
+        fwhm_e = (2.3548 * sig * np.log(10) * se) if se else None
+        d = d_of_q(q0) if q0 > 0 else float("nan")
+        d_err = (2 * math.pi * q0e / q0 ** 2) if (q0e and q0 > 0) else None
+        out.append(Peak(q=float(q0), d=float(d), snr=float("nan"),
+                        method="fitted (background + Gaussian peaks)",
+                        d_err=d_err, width_q=float(fwhm),
+                        q_err=float(q0e) if q0e else None,
+                        width_err=float(fwhm_e) if fwhm_e else None,
+                        amplitude=float(abs(amp))))
+    return out
+
+
+def _keep_real_peaks(peaks: list, q) -> list:
+    """Discard fitted components that are not peaks.
+
+    Least squares will happily add a very broad, poorly-located Gaussian that
+    simply absorbs background curvature, or a second component sitting on top of
+    the first. Such a component is not a measurement, so it is rejected:
+
+      * width greater than a third of the fitted Q-range -> that is background;
+      * centre uncertainty worse than its own FWHM, or worse than 20% of the
+        peak position itself -> not located well enough to be a measurement;
+      * centre within one FWHM of a stronger peak already kept -> duplicate.
+    """
+    span = float(np.max(q) - np.min(q))
+    keep: list = []
+    for p in sorted(peaks, key=lambda x: -(x.amplitude or 0.0)):
+        if not p.width_q or p.width_q <= 0:
+            continue
+        if p.width_q > span / 3.0:
+            continue
+        if p.q_err and p.q_err > p.width_q:
+            continue
+        if p.q_err and p.q > 0 and p.q_err / p.q > 0.20:
+            continue
+        if any(abs(p.q - k.q) < max(p.width_q, k.width_q or 0) for k in keep):
+            continue
+        keep.append(p)
+    keep.sort(key=lambda x: x.q)
+    return keep
+
+
+def _param_errors(res):
+    try:
+        _, sv, vt = np.linalg.svd(res.jac, full_matrices=False)
+        keep = sv > 1e-12 * sv[0]
+        cov = (vt[keep].T / sv[keep] ** 2) @ vt[keep]
+        dof = max(1, res.fun.size - res.x.size)
+        cov = cov * (float(np.sum(res.fun ** 2)) / dof)
+        return np.sqrt(np.clip(np.diag(cov), 0, None))
+    except Exception:  # noqa: BLE001
+        return None

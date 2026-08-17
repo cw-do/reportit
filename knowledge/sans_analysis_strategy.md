@@ -275,3 +275,29 @@ Guard rails, learned the hard way:
   disagreement measures how well separated the peak is, and is information.
 - Track the peak ACROSS the series — how d changes with temperature, position or
   treatment is usually the actual science, not any single value.
+
+### 11a. Count the peaks before choosing a peak model
+
+A stacked or lamellar system rarely gives ONE peak: expect a dominant order plus
+weaker ones, sometimes finer than they first appear. This matters because a single
+broad component (`broad_peak`) will fit one wide bump straight across several
+finer peaks — the fit looks plausible and the position and width it reports belong
+to no actual peak.
+
+- **Count first, model second.** Locate every peak that clears the noise, then
+  choose a description that can represent that many.
+- For several peaks, an **empirical** description is more honest than forcing one
+  physical model: a correlation-type background (Porod + Lorentzian + flat) plus
+  ONE GAUSSIAN PER PEAK. Each peak then has its own position and width, each with
+  an uncertainty.
+- **Report the WIDTH as well as the position.** The position gives the repeat
+  distance; the width says how ordered it is — a broad peak means a widely
+  distributed spacing, and a change in width across a series is a real result
+  independent of any change in d.
+- Choose the number of peaks by an information criterion (BIC), not by adding
+  components until chi-squared stops falling, and reject components that are
+  really background: much wider than a real peak, centre not located to better
+  than its own width, or sitting on top of a stronger peak.
+- **Once the peaks are measured this way, a further single-model fit adds little.**
+  Judge any model on whether it reproduces the peak STRUCTURE; if none does, say so
+  rather than quoting the parameters of a model that smoothed the structure away.

@@ -16,6 +16,34 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.9.0
+
+- Knowledge guide gains section 11a, "Count the peaks before choosing a peak
+  model", so the lesson applies to future experiments and not just this code path.
+
+- **Multi-peak analysis (+0.1.0), from operator feedback.** A stacked system shows
+  SEVERAL finer peaks, and a lone `broad_peak` fit puts one wide component across
+  all of them — reporting a position and width that belong to no actual peak.
+  - `dspacing.find_peaks()` reports every peak clearing the noise, not just the
+    strongest.
+  - `dspacing.fit_peak_model()` fits the curve empirically as a correlation-type
+    background (Porod + Lorentzian + flat) **plus one Gaussian per peak**, giving
+    each peak its own position AND width with 1-sigma uncertainties. The number of
+    peaks is chosen by BIC, so an extra peak must earn its parameters.
+  - Fitted components that are background rather than peaks are rejected: too wide
+    (> 1/3 of the fitted range), centre uncertain by more than its own FWHM or more
+    than 20% of its position, or overlapping a stronger peak.
+  - The per-group table now reports **peak index, Q, d (A and nm), and FWHM**, each
+    with its uncertainty.
+  - The model-selection prompt now warns that a single broad component across
+    several finer peaks is a misfit, and notes that where peak positions and widths
+    are already measured empirically a further single-model sasmodels fit adds
+    little.
+  - Validated on IPTS-38773: all three `leaf1_dark` curves resolve a reproducible
+    SECOND peak at ~13.5 nm alongside the ~19 nm primary, which the previous
+    single-peak treatment missed entirely; log-RMS residual improved
+    (e.g. 0.0089 -> 0.0054).
+
 ## 0.8.1
 
 - **Docs brought in line with the code.** The README named `glm-5.2` and "gemini"

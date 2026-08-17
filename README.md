@@ -375,29 +375,38 @@ that, a rerun would replay the pre-lesson reasoning. Each report records which
 notes each stage used, so an old report can be traced back to the knowledge that
 produced it.
 
-## Repeat distance / d-spacing
+## Peaks and repeat distance / d-spacing
 
 When the proposal is about a *periodicity* — a lamellar repeat, an interlayer
-spacing, a granum thylakoid stacking distance — the experiment is answered by one
-number per sample: the correlation-peak position converted to a real-space
-distance, `d = 2*pi/Q_peak`.
+spacing, a granum thylakoid stacking distance — the experiment is answered by the
+peak positions, converted to real-space repeats `d = 2*pi/Q_peak`.
 
-reportit detects that from the proposal's goals and hypotheses and then, for every
-group, reports a **Repeat distance** table: `Q_peak`, `d` in A and nm, and the
-peak SNR. The peak is located *model-free* — a smooth log-log baseline is removed
-(a correlation peak usually rides on a steeply decaying background, so the raw
-curve has no local maximum where the peak is) and the residual maximum must be
-interior and stand well above the point-to-point scatter, so noise is not reported
-as structure. Curves with no clear peak say so rather than inventing a number.
+reportit detects that from the proposal and then, for every group, reports a
+**Peaks resolved** table: peak index, `Q_peak`, `d` in A and nm, and the peak
+**FWHM**, each with its 1-sigma uncertainty.
 
-It also tells the model-selection agent to include a peak-bearing model
-(`broad_peak`, `gaussian_peak`, ...), so the peak position is *fitted* too; where
-that succeeds the fitted `d` is quoted with a propagated uncertainty. Both
-estimates appear when both exist — they answer the same question by different
-means, and a disagreement is worth seeing.
+**Several peaks, fitted as several peaks.** A stacked system usually shows more
+than one peak — a dominant order plus weaker ones. Fitting a single broad
+component across all of them is a misfit: the position and width it reports
+belong to no actual peak. So the curve is described *empirically* as
 
-Detection is deliberately conservative: only specific phrases count, so an
-ordinary "repeat the measurement" or a polymer "repeat unit" does not trigger it.
+```
+I(Q) = [ Porod + Lorentzian + flat background ]  +  sum of Gaussian peaks
+```
+
+giving each peak its own position and width. The number of peaks is chosen by
+BIC, so an extra peak has to earn its parameters, and fitted components that turn
+out to be background rather than peaks are rejected (too wide, centre not located,
+or overlapping a stronger peak). Curves with no resolvable peak say so.
+
+On IPTS-38773 this resolves a reproducible **second peak at ~13.5 nm** alongside
+the ~19 nm primary in every `leaf1_dark` curve — structure the earlier
+single-peak treatment missed.
+
+**Relationship to the sasmodels fitting.** Where the peaks have already been
+located and measured this way, a further single-model sasmodels fit adds little;
+the model-selection agent is told this, and told to judge candidates on whether
+they reproduce the peak *structure* rather than smoothing over it.
 
 ## Short names for long filenames
 
