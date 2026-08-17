@@ -16,6 +16,31 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.11.0
+
+Operator decision after reviewing the IPTS-38773 report: the sasmodels stage was
+making the analysis worse, not better — `broad_peak` smeared several finer peaks
+into one, and the lamellar model failed to fit even the primary peak. Where the
+proposal's goal is a repeat distance, the empirical peak fit answers it and a
+model search adds nothing.
+
+- **Model-based fitting is now OPT-IN (+0.1.0).** `--sasfit` is tri-state:
+  `--sasfit` forces it on, `--no-sasfit` forces it off, and with neither it runs
+  only when the PROPOSAL names the analysis it wants. `--sasmodels/--no-sasmodels`
+  added as an alias.
+- **New `analysis/model_intent.py`** reads the proposal for a named analysis
+  (Guinier/Rg, correlation length, Porod/fractal, sphere, cylinder, excluded
+  volume, Gaussian coil, lamellar) or a generic request for model fitting, and
+  enables the stage only then. The named models are put FIRST among the candidates,
+  since that is the number the experiment was proposed to measure.
+  Validated: OFF for IPTS-38773 (repeat distance), ON for IPTS-37095 (proposal
+  names Rg and the Flory exponent) — in both LLM and `--no-llm` modes.
+- A default run still gives the curves, the qualitative observations, and the
+  empirical peak / repeat-distance analysis with its plots. When fitting is
+  skipped the report says so and how to enable it.
+- Knowledge guide section 13, "When NOT to fit a model at all", records the
+  reasoning for future experiments.
+
 ## 0.10.0
 
 Operator feedback: the report said `broad_peak` failed to capture the lamellar

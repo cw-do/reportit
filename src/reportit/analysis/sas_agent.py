@@ -169,7 +169,7 @@ def _select_prompt(context: str, group_label: str, feats: dict, catalog: list) -
 def run_group_fit(
     group, members: list[Dataset], llm: LLMClient, fig_dir: Path,
     experiment_context: str, *, max_models: int = 3, guide=None, namemap=None,
-    d_intent=None,
+    d_intent=None, m_intent=None,
 ) -> SasFitOutcome:
     glabel = namemap.shorten_label(group.label) if namemap is not None else group.label
     out = SasFitOutcome(group_id=group.group_id, label=glabel)
@@ -192,6 +192,8 @@ def run_group_fit(
     gkey = guidance.digest(guide)
     from . import dspacing
     d_hint = dspacing.prompt_hint(d_intent) if d_intent is not None else ""
+    from . import model_intent as _mi
+    d_hint += _mi.prompt_hint(m_intent) if m_intent is not None else ""
     dkey = "d" if d_hint else "n"
     kbkey = knowledge.digest("fitting")
 

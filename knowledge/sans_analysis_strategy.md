@@ -372,3 +372,28 @@ model failed to reproduce the structure.
 
 And never report that a model "fails to capture the peak" without also giving the
 measured peak position. A stated failure with no number is useless to the reader.
+
+## 13. When NOT to fit a model at all
+
+Model fitting is not the default form of analysis. Fit a model when the science
+question IS a model parameter — and not otherwise.
+
+- **Let the proposal decide.** If it says "determine Rg from the Guinier region",
+  a Guinier analysis is exactly what the report should contain, and the proposal's
+  model belongs first among the candidates. If the proposal asks for a repeat
+  distance, the answer is the peak position — an empirical measurement that needs
+  no model at all.
+- **An unrequested model fit is worse than no fit.** It produces a confident
+  number that answers nobody's question, and a model can win on curve-shape
+  agreement while reproducing none of the structure that matters: one broad
+  component smeared across several finer peaks, or a lamellar spacing
+  corresponding to no observed peak. A wrong number in a report is more damaging
+  than an absent one.
+- **A default analysis is not a lesser one.** The curves, an honest qualitative
+  description of what they show, and the measurement the proposal actually asked
+  for (peak positions and widths, a trend across the series) answer the science
+  question. Say what the data show; add a model only when it earns its place.
+- When a model IS fitted and fails to reproduce the key feature, say so plainly
+  and give the measured quantity instead. "The model does not describe the peak"
+  plus the measured peak position is a result; the model's parameters alone are
+  not.

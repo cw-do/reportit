@@ -95,10 +95,22 @@ a dedicated reasoning model for fit selection and critique.
 
 The `.env` is gitignored — never commit it.
 
-## Model-based fitting (on by default; `--no-sasfit` to skip)
+## Model-based fitting (opt-in; `--sasfit` to enable)
 
-Every run does an **autoresearch** sasmodels-fitting stage — it fits each sample
-group the way a human analyst would: try several physically-plausible models,
+Model fitting is **off by default**. A model fit is only worth doing when the
+science question *is* a model parameter; an unrequested fit produces confident
+numbers that answer nobody's question, and a model can win on curve-shape
+agreement while reproducing none of the structure that matters.
+
+It runs when you ask (`--sasfit`), or automatically when **the proposal names the
+analysis it wants** — "determine Rg from the Guinier region" enables a Guinier
+analysis and puts it first among the candidates. `--no-sasfit` forces it off.
+
+A default run still gives you the curves, the qualitative observations, and the
+empirical peak / repeat-distance analysis with its plots — which is the complete
+answer when the proposal's goal is a spacing rather than a model parameter.
+
+When it does run, it fits each sample group the way a human analyst would: try several physically-plausible models,
 fit each from many starting points to escape local minima, and rank them by a
 **shape-aware score** that judges the fit both quantitatively *and*
 qualitatively. Per group:

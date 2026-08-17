@@ -52,7 +52,7 @@ def run_report(
     no_proposal: bool = False,
     strategy_only: bool = False,
     refresh: bool = False,
-    sasfit: bool = True,
+    sasfit: bool | None = None,
     summary_only: bool = False,
     proposal_path: Optional[str] = None,
     data_dirs: Optional[list[str]] = None,
@@ -179,6 +179,29 @@ def run_report(
             + "; ".join(f"{st}: {', '.join(v) or 'none'}" for st, v in per_stage.items())
             + ". Teach reportit more with `reportit --learn \"...\"`.")
 
+    # 4c) Should we do model-based fitting at all? Opt-in: only when the operator
+    # asks, or when the proposal names the analysis it wants. Fitting an
+    # unrequested model yields confident numbers that answer nobody's question,
+    # and a model that wins on curve shape can still reproduce none of the
+    # structure that matters.
+    from .analysis import model_intent as _mi
+    m_intent = _mi.detect(proposal)
+    if sasfit is None:
+        run_sasfit = bool(m_intent.wanted)
+        if run_sasfit:
+            logger.info("Model-based fitting ON: %s.", m_intent.reason())
+        else:
+            logger.info("Model-based fitting OFF (proposal does not call for a "
+                        "model analysis) — pass --sasfit to run it anyway.")
+    else:
+        run_sasfit = bool(sasfit)
+    if not run_sasfit:
+        ctx.degraded.append(
+            "Model-based (sasmodels) fitting was not run: the proposal does not "
+            "name a model analysis. The curves, qualitative observations and any "
+            "empirical peak / repeat-distance measurement are reported. Re-run "
+            "with --sasfit to add a model search.")
+
     # 5) strategy (agentic LLM or deterministic)
     logger.info("Deriving analysis strategy (%s)...", "LLM" if llm else "deterministic")
     strategy = engine.derive_strategy(inv, datasets, proposal, llm, catalog=catalog,
@@ -222,7 +245,7 @@ def run_report(
 
     # 7b) agentic model-based fitting (sasmodels) — opt-in
     sas_outcomes = []
-    if sasfit and llm is not None:
+    if run_sasfit and llm is not None:
         from .analysis import sas_agent
         fig_dir = out_dir / "figures"
         name_to_ds: dict[str, list] = {}
@@ -249,7 +272,8 @@ def run_report(
             try:
                 outcome = sas_agent.run_group_fit(
                     g, members, llm, fig_dir, strategy.experiment_summary,
-                    guide=guide, namemap=namemap, d_intent=d_intent)
+                    guide=guide, namemap=namemap, d_intent=d_intent,
+                    m_intent=m_intent)
                 sas_outcomes.append(outcome)
                 model = outcome.best.model_name if outcome.best else "none"
                 logger.info("sasfit: [%d/%d] %s -> %s (%s)", idx, total, g.group_id,

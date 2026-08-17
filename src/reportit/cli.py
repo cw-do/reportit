@@ -62,10 +62,17 @@ from . import __version__, pipeline
 @click.option("--strategy-only", is_flag=True,
               help="Print the LLM-derived AnalysisStrategy and stop.")
 @click.option("--refresh", is_flag=True, help="Bust caches (re-query ONCat/LLM).")
-@click.option("--sasfit/--no-sasfit", default=True,
-              help="Agentic sasmodels model-based fitting (model selection + bumps "
-                   "fit + critic loop, then fit every member) per group. On by "
-                   "default; use --no-sasfit for a quick run without it.")
+@click.option("--sasfit/--no-sasfit", "--sasmodels/--no-sasmodels", "sasfit",
+              default=None,
+              help="Agentic sasmodels model-based fitting per group. OFF by "
+                   "default: a model fit is only worth doing when the science "
+                   "question is a model parameter, and an unwanted fit produces "
+                   "confident numbers that answer nobody's question. Pass "
+                   "--sasfit to force it on, --no-sasfit to force it off. If "
+                   "neither is given it runs only when the PROPOSAL names the "
+                   "analysis it wants (e.g. a Guinier/Rg determination). Curves, "
+                   "qualitative observations and the empirical peak / "
+                   "repeat-distance analysis always run.")
 @click.option("--summary-only", is_flag=True,
               help="Generate only report_summary.pdf (skip the comprehensive "
                    "report). Pair with --no-sasfit for the fastest overview run.")
