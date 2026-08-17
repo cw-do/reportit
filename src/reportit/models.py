@@ -260,6 +260,9 @@ class SasFitOutcome:
     # repeat distance d = 2*pi/Q_peak from the fitted peak parameter, when the
     # chosen model has one (broad_peak, gaussian_peak, lamellar, ...)
     d_spacing: dict = field(default_factory=dict)
+    # model-free peak measurement for this group's curve, so the fitting
+    # section can quote peak positions even when no model reproduces them
+    measured_peaks: list = field(default_factory=list)
 
 
 @dataclass

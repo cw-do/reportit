@@ -119,10 +119,31 @@ class Runner:
             # member and report d = 2*pi/Q_peak alongside the curves
             if self.d_intent is not None and self.d_intent.wanted:
                 from ..analysis import dspacing
-                rows = dspacing.group_peaks(members, self.d_intent, self.namemap)
+                rows, pfits = dspacing.group_peaks(members, self.d_intent,
+                                                   self.namemap)
                 dtab = dspacing.build_table(glabel, g.group_id, rows)
                 if dtab is not None:
                     gr.extra_tables.append(dtab)
+                # Show the peak decomposition, not just the numbers: a reader can
+                # then check that each Gaussian sits on a real feature and that
+                # the background is not doing the peaks' work.
+                for lbl, pf in pfits:
+                    if not pf.ok or not pf.peaks:
+                        continue
+                    pth = self.fig_dir / f"peakfit_{_safe(g.group_id)}_{_safe(lbl)}.png"
+                    made = figures.plot_peak_fit(pf, pth, title=lbl)
+                    if made:
+                        ds_txt = ", ".join(
+                            f"d={p.d:.0f} $\\mathrm{{\\AA}}$ ({p.d / 10:.1f} nm)"
+                            for p in pf.peaks)
+                        gr.figures.append(FigureRef(
+                            path=made,
+                            caption=(f"Empirical peak fit for {lbl}: data, the "
+                                     "correlation-type background, and one Gaussian "
+                                     f"per resolved peak ({ds_txt}). Dotted lines mark "
+                                     "the fitted peak positions; the lower panel shows "
+                                     "the fractional residual."),
+                            label=f"fig:peakfit_{_safe(g.group_id)}_{_safe(lbl)}"))
             reports.append(gr)
         return reports
 

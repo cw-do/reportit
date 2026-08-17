@@ -16,6 +16,35 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.10.0
+
+Operator feedback: the report said `broad_peak` failed to capture the lamellar
+peak without giving the peak positions or ever trying a lamellar model, and the
+multi-peak fits were never plotted.
+
+- **Peak-fit plots (+0.1.0).** `figures.plot_peak_fit()` shows the data, the
+  correlation-type background, EVERY individual Gaussian peak and the total fit,
+  with each peak annotated with its repeat distance and a fractional-residual
+  panel. One figure per member, so the decomposition is checkable rather than
+  asserted.
+- **Fixed: `lamellar` and `lamellar_hg` cannot report a spacing.** They were in
+  `PEAK_MODELS` but are single-lamella form factors with no spacing parameter, so
+  recommending them for a repeat-distance experiment was wrong. Replaced with the
+  models that do have `d_spacing`: `lamellar_stack_caille`,
+  `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal` (plus `peak_lorentz`).
+- **Peak-bearing models are now forced into the candidate set** when the
+  experiment targets a repeat distance, so a report can no longer say a model
+  "fails to capture the lamellar peak" without a lamellar model having been tried.
+  On IPTS-38773 this changed the outcome: `lamellar_stack_paracrystal` now wins
+  over `broad_peak`.
+- **The fitting section quotes the measured peak positions**, so a stated failure
+  always comes with the numbers.
+- **New consistency check.** A model can win on curve shape while reporting a
+  spacing matching no observed peak — on IPTS-38773 the winning lamellar fit
+  reports d = 112 A while the measured peaks are 192 and 137 A. The report now
+  says so explicitly and tells the reader not to quote that spacing.
+- Knowledge guide section 11b records both lessons.
+
 ## 0.9.1
 
 - **Knowledge guide gains section 12, "Planning the analysis".** An audit found

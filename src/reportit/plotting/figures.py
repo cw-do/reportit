@@ -317,3 +317,75 @@ def plot_2d(ds: Dataset, out_path: Path, *, markersize: int = 10) -> Path | None
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     return out_path
+
+
+def plot_peak_fit(fit, out_path: Path, *, title: str = "") -> Path | None:
+    """Show the empirical multi-peak fit: data, total model, the background it
+    sits on, and EVERY individual peak, plus a residual panel.
+
+    The point of the figure is to make the peak decomposition checkable — a
+    reader should be able to see that each Gaussian sits on a real feature and
+    that the background is not doing the peaks' work. Each peak is annotated with
+    its real-space repeat so the number in the table is visible on the curve.
+    """
+    import numpy as np
+
+    if fit is None or not getattr(fit, "ok", False):
+        return None
+    q = np.asarray(fit.q, float)
+    yd = np.asarray(fit.i_data, float)
+    ym = np.asarray(fit.i_model, float)
+    bg = np.asarray(fit.background, float)
+    if q.size < 5 or ym.size != q.size:
+        return None
+    m = (q > 0) & (yd > 0) & np.isfinite(yd) & np.isfinite(ym)
+    if m.sum() < 5:
+        return None
+
+    fig, (ax, axr) = plt.subplots(
+        2, 1, figsize=(7, 6.2), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]})
+
+    ax.errorbar(q[m], yd[m], fmt="o", ms=3.2, fillstyle="none",
+                color="tab:blue", label="data")
+    ax.plot(q[m], bg[m], "-", lw=1.2, color="tab:green", alpha=0.9,
+            label="background (Porod + Lorentzian + flat)")
+
+    peaks = list(getattr(fit, "peaks", []) or [])
+    for k, p in enumerate(peaks, 1):
+        if not p.width_q or not p.amplitude:
+            continue
+        sig = p.width_q / 2.3548
+        comp = bg + p.amplitude * np.exp(-0.5 * ((q - p.q) / sig) ** 2)
+        ax.plot(q[m], comp[m], "--", lw=1.1, alpha=0.85,
+                label=f"peak {k}: d={p.d:.0f} $\\mathrm{{\\AA}}$ "
+                      f"({p.d / 10:.1f} nm)")
+        ax.axvline(p.q, color="gray", ls=":", lw=0.7, alpha=0.7)
+
+    ax.plot(q[m], ym[m], "-", lw=1.8, color="tab:red",
+            label=f"total fit ({len(peaks)} peak{'s' if len(peaks) != 1 else ''})")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylabel(r"I(Q) (cm$^{-1}$)")
+    ttl = title or "multi-peak fit"
+    if getattr(fit, "log_rms", None) is not None:
+        ttl += f"   (log-RMS={fit.log_rms:.4f})"
+    ax.set_title(ttl, fontsize=10)
+    ax.legend(fontsize=7, framealpha=0.75)
+    ax.grid(True, which="major", alpha=0.2)
+
+    resid = (yd[m] - ym[m]) / np.where(yd[m] != 0, yd[m], 1)
+    axr.axhline(0, color="k", lw=0.8)
+    axr.plot(q[m], resid, "o", ms=3, color="tab:gray")
+    for p in peaks:
+        axr.axvline(p.q, color="gray", ls=":", lw=0.7, alpha=0.7)
+    axr.set_xscale("log")
+    axr.set_ylabel("(data-fit)/data")
+    axr.set_xlabel(r"Q ($\mathrm{\AA}^{-1}$)")
+    axr.grid(True, which="major", alpha=0.2)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path

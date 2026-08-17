@@ -129,6 +129,49 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
     )
 
 
+def _measured_peaks_sentence(o) -> str:
+    """Quote the empirically measured peaks alongside the model verdict."""
+    pks = getattr(o, "measured_peaks", None) or []
+    if not pks:
+        return ""
+    bits = []
+    for k, p in enumerate(pks, 1):
+        err = f" $\\pm$ {_fmt(p['d_err'], 2)}" if p.get("d_err") else ""
+        bits.append(f"peak {k}: $Q$ = {_fmt(p['q'], 3)} "
+                    f"$\\mathrm{{\\AA}}^{{-1}}$, $d$ = {_fmt(p['d'], 4)}{err} "
+                    f"$\\mathrm{{\\AA}}$ ({_fmt(p['d'] / 10, 3)} nm)")
+    out = (" Independently of any sasmodels choice, an empirical fit "
+           "(correlation-type background plus one Gaussian per peak) resolves "
+           + "; ".join(bits) + " — see the peak-fit figure for this group.")
+    return out + _peak_consistency_warning(o, pks)
+
+
+def _peak_consistency_warning(o, pks) -> str:
+    """Say so when the model's spacing does not match the measured peaks.
+
+    A model can win on curve-shape agreement while reporting a spacing that
+    corresponds to no observed peak. Quoting that number without comment would be
+    the worst outcome of the whole analysis, so the disagreement is stated.
+    """
+    d = (getattr(o, "d_spacing", None) or {}).get("d")
+    if not d or not pks:
+        return ""
+    measured = [p["d"] for p in pks if p.get("d")]
+    # accept the model spacing if it matches a measured peak, or a small-integer
+    # order of one (a 2nd-order reflection sits at d/2, and so on)
+    for md in measured:
+        for n in (1, 2, 3):
+            if abs(d - md / n) / (md / n) < 0.12:
+                return ""
+    got = ", ".join(f"{m:.0f}" for m in measured)
+    return (f" \\textbf{{Caution:}} the spacing this model reports "
+            f"({_fmt(d, 4)} $\\mathrm{{\\AA}}$) does not correspond to any "
+            f"measured peak ({got} $\\mathrm{{\\AA}}$), nor to a low-order "
+            "reflection of one. The model has therefore fitted the curve without "
+            "reproducing the peak structure, and its spacing should NOT be quoted "
+            "as the repeat distance — use the measured peak positions above.")
+
+
 def _dspacing_sentence(o) -> str:
     """State the repeat distance in the fit section when the model gives one."""
     d = getattr(o, "d_spacing", None) or {}
@@ -191,7 +234,8 @@ def _build_sas_sections(model: ReportModel, mode: str) -> list:
             "success": o.success,
             "model": L.escape(o.best.model_name) if o.best else "—",
             "model_description": L.escape_keep_math((o.model_description or "")[:2000]),
-            "fitted_fixed": fitted_fixed + _dspacing_sentence(o),
+            "fitted_fixed": fitted_fixed + _dspacing_sentence(o)
+                            + _measured_peaks_sentence(o),
             "chisq": _fmt(o.best.reduced_chisq, 3) if (o.best and o.best.reduced_chisq) else "—",
             "rationale": L.escape_keep_math(o.rationale),
             "critique": L.escape_keep_math(o.critique),

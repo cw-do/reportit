@@ -57,9 +57,16 @@ PEAK_Q_PARAMS = ("peak_pos", "q0", "peak_q")
 # Fitted parameters that are ALREADY a real-space repeat distance.
 PEAK_D_PARAMS = ("d_spacing", "spacing")
 
-# Models worth trying when a repeat distance is the goal.
-PEAK_MODELS = ("broad_peak", "gaussian_peak", "correlation_length", "teubner_strey",
-               "lamellar", "lamellar_hg")
+# Models worth trying when a repeat distance is the goal — every one of these
+# reports either a peak position or the spacing itself. NOTE: plain `lamellar`
+# and `lamellar_hg` are single-lamella FORM FACTORS with no spacing parameter at
+# all, so they cannot answer a repeat-distance question; the lamellar models that
+# can are the STACK ones below.
+PEAK_MODELS = ("broad_peak", "gaussian_peak", "peak_lorentz",
+               "lamellar_stack_caille", "lamellar_hg_stack_caille",
+               "lamellar_stack_paracrystal", "teubner_strey")
+# forced into the candidate set when the experiment targets a repeat distance
+FORCE_MODELS = ("broad_peak", "gaussian_peak", "lamellar_stack_paracrystal")
 
 
 @dataclass
@@ -384,8 +391,13 @@ def prompt_hint(intent: Intent) -> str:
         "\nREPEAT-DISTANCE EXPERIMENT: the proposal's goal is a periodic repeat "
         "distance (d = 2*pi/Q_peak), so the SCIENTIFICALLY IMPORTANT feature is the "
         "position of the correlation/Bragg peak, not merely the overall decay. "
+        "For a LAMELLAR/stacked system use a model that actually reports a "
+        "spacing: lamellar_stack_caille, lamellar_hg_stack_caille or "
+        "lamellar_stack_paracrystal all have a d_spacing parameter, whereas "
+        "plain `lamellar` and `lamellar_hg` are single-lamella form factors "
+        "with NO spacing parameter and cannot answer the question. "
         "Include at least one peak-bearing model among your candidates "
-        f"({', '.join(PEAK_MODELS[:4])}), and do NOT choose a Q-window that cuts "
+        f"({', '.join(PEAK_MODELS[:5])}), and do NOT choose a Q-window that cuts "
         "the peak out.\n"
         "COUNT THE PEAKS FIRST. A stacked/lamellar system commonly shows SEVERAL "
         "finer peaks — one dominant plus weaker ones. A single broad_peak component "
@@ -413,7 +425,8 @@ def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
     """
     from .loaders import load_iq
     short = namemap.short if namemap is not None else (lambda x: x)
-    rows = []
+    rows: list[dict] = []
+    fits: list = []
     for ds in members:
         path = ds.merged_path or ds.iq_path
         if not path:
@@ -425,6 +438,7 @@ def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
             continue
         fit = fit_peak_model(iq.mod_q, iq.intensity, getattr(iq, "error", None),
                              q_window=intent.q_window)
+        fits.append((short(ds.output_name), fit))
         if not fit.ok or not fit.peaks:
             rows.append({"name": short(ds.output_name), "order": None,
                          "q_peak": None, "d": None, "width_q": None,
@@ -439,7 +453,7 @@ def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
                 "width_q": pk.width_q, "width_err": pk.width_err,
                 "log_rms": fit.log_rms,
             })
-    return rows
+    return rows, fits
 
 
 def build_table(group_label: str, group_id: str, rows: list[dict]):

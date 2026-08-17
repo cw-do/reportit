@@ -403,10 +403,24 @@ On IPTS-38773 this resolves a reproducible **second peak at ~13.5 nm** alongside
 the ~19 nm primary in every `leaf1_dark` curve — structure the earlier
 single-peak treatment missed.
 
-**Relationship to the sasmodels fitting.** Where the peaks have already been
-located and measured this way, a further single-model sasmodels fit adds little;
-the model-selection agent is told this, and told to judge candidates on whether
-they reproduce the peak *structure* rather than smoothing over it.
+Each member also gets a **peak-fit figure** showing the data, the background, every
+individual Gaussian, and the total fit, with each peak annotated by its repeat
+distance and a residual panel underneath — so the decomposition can be checked
+rather than taken on trust.
+
+**Lamellar systems.** Only the *stack* models report a spacing:
+`lamellar_stack_caille`, `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal`
+have a `d_spacing` parameter. Plain `lamellar` / `lamellar_hg` are single-lamella
+form factors with none, and cannot answer a repeat-distance question however well
+they fit. When the experiment targets a repeat distance, peak-bearing models are
+**forced into the candidate set**, so a report can never say a model "fails to
+capture the lamellar peak" without a lamellar model having been tried.
+
+**Cross-check, always.** The fitting section quotes the measured peak positions
+next to the model verdict, and if the model's spacing matches no observed peak
+(nor a low-order reflection of one) the report says so and tells the reader not to
+quote it. That case is real: on IPTS-38773 the winning lamellar fit reports
+d = 112 A while the measured peaks are at 192 and 137 A.
 
 ## Short names for long filenames
 

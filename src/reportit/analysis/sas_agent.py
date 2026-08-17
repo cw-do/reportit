@@ -211,7 +211,7 @@ def run_group_fit(
         out.critique = "Selector proposed no candidate models."
         return out
     # always compare a correlation/OZ description (needs no Guinier region)
-    candidates = _ensure_baseline(candidates[:max_models])
+    candidates = _ensure_baseline(candidates[:max_models], d_intent)
 
     # 2) fit EVERY candidate with the robust multi-start fitter and rank by the
     # PHYSICS-ADJUSTED shape score (no LLM here — the score is the judge). We keep
@@ -279,6 +279,22 @@ def run_group_fit(
     except Exception as e:  # noqa: BLE001
         logger.debug("full-coverage step failed for %s: %s", group.group_id, e)
 
+    # Independent, model-free peak measurement for THIS curve. Recorded so the
+    # fitting section can state where the peaks actually are — a report that says
+    # a model "fails to capture the lamellar peak" must also say where that peak
+    # is, otherwise the reader is told about a failure and given no number.
+    if d_intent is not None and getattr(d_intent, "wanted", False):
+        try:
+            mp = dspacing.fit_peak_model(iq.mod_q, iq.intensity,
+                                         getattr(iq, "error", None),
+                                         q_window=d_intent.q_window)
+            if mp.ok and mp.peaks:
+                out.measured_peaks = [
+                    {"q": p_.q, "q_err": p_.q_err, "d": p_.d, "d_err": p_.d_err,
+                     "width_q": p_.width_q} for p_ in mp.peaks]
+        except Exception as e:  # noqa: BLE001
+            logger.debug("empirical peak measurement failed: %s", e)
+
     # repeat distance from the fitted peak position, when the model has one
     pk = dspacing.from_fit(out.best)
     if pk is not None:
@@ -310,15 +326,31 @@ def _data_desc(iq) -> dict:
     return shape.curve_descriptors(iq.mod_q, iq.intensity)
 
 
-def _ensure_baseline(candidates: list) -> list:
-    """Guarantee correlation_length and lorentz are always among the candidates:
-    a correlation / Ornstein-Zernike description needs no Guinier region and fits
-    the full Q-range, so it must never be missing from the comparison."""
+def _ensure_baseline(candidates: list, d_intent=None) -> list:
+    """Guarantee the always-relevant models are among the candidates.
+
+    correlation_length and lorentz: a correlation / Ornstein-Zernike description
+    needs no Guinier region and fits the full Q-range, so it must never be missing
+    from the comparison.
+
+    When the experiment targets a REPEAT DISTANCE, also force models that actually
+    report a peak position or spacing — otherwise the report can end up saying a
+    model "fails to capture the lamellar peak" without ever having tried a model
+    that could.
+    """
+    from . import dspacing
     out = list(candidates)
     have = {(c.get("model") or "").lower() for c in out}
-    for m in ("correlation_length", "lorentz"):
+    forced = ["correlation_length", "lorentz"]
+    if d_intent is not None and getattr(d_intent, "wanted", False):
+        forced += list(dspacing.FORCE_MODELS)
+    for m in forced:
         if m not in have:
-            out.append(search.build_plan(m))
+            try:
+                out.append(search.build_plan(m))
+                have.add(m)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("could not build a plan for %s: %s", m, e)
     return out
 
 
