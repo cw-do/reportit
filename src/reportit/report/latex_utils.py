@@ -7,6 +7,8 @@ known set to LaTeX and drop anything else non-ASCII.
 
 from __future__ import annotations
 
+import re
+
 _ESCAPE = {
     "\\": r"\textbackslash{}",
     "&": r"\&",
@@ -89,3 +91,35 @@ def escape_keep_math(text) -> str:
     for k in range(len(parts)):
         parts[k] = escape(parts[k]) if k % 2 == 0 else _sanitize_math(parts[k])
     return "$".join(parts)
+
+
+# Captions are escaped, so a literal "\\ref{...}" written into one comes out as
+# visible markup instead of a cross-reference. Callers therefore write the
+# sentinel REF("label"), which survives escaping and is converted to a real
+# \\ref by apply_refs() when the table is rendered.
+_REF_SENTINEL = "@@REF:%s@@"
+# The label may arrive with its underscores/braces escaped by escape(); match
+# those escapes as part of the label and unescape ONLY inside the match. An
+# earlier version unescaped the whole string, which turned every escaped
+# underscore in the caption back into a bare "_" and made pdflatex fail with
+# "Missing $ inserted" — producing no PDF at all.
+_REF_RE = re.compile(r"@@REF:((?:\\.|[^@\\])+?)@@")
+
+
+def REF(label: str) -> str:
+    """Placeholder for a LaTeX cross-reference inside text that will be escaped."""
+    return _REF_SENTINEL % label
+
+
+def _unescape_label(lbl: str) -> str:
+    for a, b in (("\\_", "_"), ("\\{", "{"), ("\\}", "}"), ("\\:", ":")):
+        lbl = lbl.replace(a, b)
+    return lbl.replace("\\", "")
+
+
+def apply_refs(text: str) -> str:
+    """Turn REF() sentinels into real \\ref commands, touching nothing else."""
+    if not text:
+        return text
+    return _REF_RE.sub(
+        lambda m: "Figure~\\ref{%s}" % _unescape_label(m.group(1)), text)

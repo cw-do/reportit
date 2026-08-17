@@ -16,6 +16,22 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.11.2
+
+- **Peak Fit Summary moved to the appendix** as "Peak Fit Evidence". Its purpose
+  is to make the quoted peak positions credible, so it is evidence, not a
+  headline: it was appearing as Figure 1, ahead of the data plots and the
+  observations. Figure 1 is again the group's I(Q) plot.
+- Every peak table now **cross-references** the evidence figure ("The fits
+  themselves are shown in Figure 12 (appendix)"), as does the model-fitting
+  section, so nothing is buried — the numbers stay traceable to the fits.
+- New `latex_utils.REF()` / `apply_refs()`: captions are LaTeX-escaped, so a
+  literal `\ref{...}` written into one came out as visible markup. Callers now
+  write a sentinel that survives escaping and becomes a real cross-reference at
+  render time.
+- Knowledge guide section 13b records the rule: lead with the measurement, put
+  what a sceptical reader needs to check it in an appendix, and refer to it.
+
 ## 0.11.1
 
 - **Peak fits are shown as a summary grid, not one full-width figure each.**

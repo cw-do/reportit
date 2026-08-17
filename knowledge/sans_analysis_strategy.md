@@ -414,3 +414,17 @@ which is the opposite of what a series report is for.
   summary in itself and not merely a contact sheet.
 - Keep panels legible: at panel size the default log-axis ticks collide into an
   unreadable smear, so label only a few decades and drop the minor tick labels.
+
+### 13b. Evidence belongs in the appendix, results up front
+
+A figure whose purpose is to make a number CREDIBLE is evidence, not a headline.
+Putting the peak-fit decompositions before the data plots makes the first thing a
+reader sees a diagnostic, and buries the observation they opened the report for.
+
+- Lead with the measurement: the curves, what they show, and the numbers.
+- Put the supporting fits and decompositions in an **appendix**, and REFER to them
+  from every place that quotes a number derived from them. A cross-reference costs
+  the reader one page turn and buys full traceability.
+- The rule generalises: anything included so a sceptical reader can check the work
+  — fit decompositions, candidate-model comparisons, run catalogues — is appendix
+  material. Anything that answers the science question is not.

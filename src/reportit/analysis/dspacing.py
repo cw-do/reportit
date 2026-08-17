@@ -456,6 +456,11 @@ def group_peaks(members, intent: Intent, namemap=None) -> list[dict]:
     return rows, fits
 
 
+def _ref(label: str) -> str:
+    from ..report.latex_utils import REF
+    return REF(label)
+
+
 def build_table(group_label: str, group_id: str, rows: list[dict]):
     """TableSpec of Q_peak and d = 2*pi/Q_peak for a group. None if no peak found."""
     from ..models import TableSpec
@@ -488,7 +493,8 @@ def build_table(group_label: str, group_id: str, rows: list[dict]):
                  "is the fitted FWHM in Q (a broader peak means a less ordered, "
                  "more widely distributed spacing). Values are given with their "
                  "1-sigma fit uncertainties; a dash means no peak was resolved "
-                 "well enough to quote."),
+                 "well enough to quote. The fits themselves are shown in "
+                 + _ref("fig:peakfit_summary") + " (appendix)."),
         label=f"tab:dspacing_{re.sub(r'[^0-9A-Za-z]+', '_', group_id)}",
         headers=["Member", "Peak", "Q_peak (1/A)", "d (A)", "d (nm)", "FWHM (1/A)"],
         rows=body, fontsize="footnotesize", colspec="l c r r r r")

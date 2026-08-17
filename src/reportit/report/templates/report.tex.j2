@@ -45,18 +45,6 @@
 << render_table(catalog_table) >>
 <% endif %>
 
-<% if summary_figures %>
-\section{Peak Fit Summary}
-<% for fig in summary_figures %>
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=<< fig.width >>]{<< fig.path >>}
-  \caption{<< fig.caption >>}
-  \label{<< fig.label >>}
-\end{figure}
-<% endfor %>
-<% endif %>
-
 \section{Results by Sample Group}
 <% for gr in group_reports %>
 \subsection{<< gr.title >>}
@@ -160,8 +148,22 @@ The trend of the key parameter across the series is shown in Figure~\ref{<< s.tr
 <% endfor %>\end{itemize}
 <% endif %>
 
-<% if appendix_tables or sas_appendix %>
+<% if appendix_tables or sas_appendix or summary_figures %>
 \appendix
+<% if summary_figures %>
+\section{Peak Fit Evidence}
+These figures show the empirical peak fit behind every peak position and
+width quoted in this report, so the decomposition can be checked rather
+than taken on trust.
+<% for fig in summary_figures %>
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=<< fig.width >>]{<< fig.path >>}
+  \caption{<< fig.caption >>}
+  \label{<< fig.label >>}
+\end{figure}
+<% endfor %>
+<% endif %>
 <% if sas_appendix %>
 \section{Model Selection \& Fitting Rationale}
 For each sample group, this appendix records every candidate model the fitter

@@ -246,7 +246,9 @@ def run_report(
         page = 12
         pages = [pf[k:k + page] for k in range(0, len(pf), page)]
         for pi, chunk in enumerate(pages, 1):
-            suffix = f"_{pi}" if len(pages) > 1 else ""
+            # the first grid always keeps the bare label, so references to
+            # fig:peakfit_summary resolve whether or not it paginated
+            suffix = "" if pi == 1 else f"_{pi}"
             fp = out_dir / "figures" / f"peakfit_summary{suffix}.png"
             ttl = "Empirical peak fits" + (f" ({pi}/{len(pages)})" if len(pages) > 1 else "")
             made = _fg.plot_peak_fit_grid(chunk, fp, title=ttl)

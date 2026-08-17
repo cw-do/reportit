@@ -46,7 +46,7 @@ def _render_table(table: TableSpec) -> str:
         cells = (cells + [""] * ncol)[:ncol]
         body_lines.append(" & ".join(cells) + r" \\")
     body = "\n".join(body_lines)
-    cap = L.escape_keep_math(table.caption)
+    cap = L.apply_refs(L.escape_keep_math(table.caption))
 
     if table.longtable:
         out = (
@@ -146,7 +146,8 @@ def _measured_peaks_sentence(o) -> str:
                     f"$\\mathrm{{\\AA}}$ ({_fmt(p['d'] / 10, 3)} nm)")
     out = (" Independently of any sasmodels choice, an empirical fit "
            "(correlation-type background plus one Gaussian per peak) resolves "
-           + "; ".join(bits) + " — see the peak-fit figure for this group.")
+           + "; ".join(bits) + " (the fits are shown in "
+           "Figure~\\ref{fig:peakfit_summary} in the appendix).")
     return out + _peak_consistency_warning(o, pks)
 
 
