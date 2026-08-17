@@ -33,6 +33,8 @@ class Runner:
                  d_intent=None):
         self.namemap = namemap
         self.d_intent = d_intent
+        # (label, MultiPeakFit) across every group, for one summary grid
+        self.peak_fits: list = []
         self.fig_dir = Path(fig_dir)
         self.fig_dir.mkdir(parents=True, exist_ok=True)
         # index output_name -> {variant: Dataset}
@@ -124,26 +126,11 @@ class Runner:
                 dtab = dspacing.build_table(glabel, g.group_id, rows)
                 if dtab is not None:
                     gr.extra_tables.append(dtab)
-                # Show the peak decomposition, not just the numbers: a reader can
-                # then check that each Gaussian sits on a real feature and that
-                # the background is not doing the peaks' work.
-                for lbl, pf in pfits:
-                    if not pf.ok or not pf.peaks:
-                        continue
-                    pth = self.fig_dir / f"peakfit_{_safe(g.group_id)}_{_safe(lbl)}.png"
-                    made = figures.plot_peak_fit(pf, pth, title=lbl)
-                    if made:
-                        ds_txt = ", ".join(
-                            f"d={p.d:.0f} $\\mathrm{{\\AA}}$ ({p.d / 10:.1f} nm)"
-                            for p in pf.peaks)
-                        gr.figures.append(FigureRef(
-                            path=made,
-                            caption=(f"Empirical peak fit for {lbl}: data, the "
-                                     "correlation-type background, and one Gaussian "
-                                     f"per resolved peak ({ds_txt}). Dotted lines mark "
-                                     "the fitted peak positions; the lower panel shows "
-                                     "the fractional residual."),
-                            label=f"fig:peakfit_{_safe(g.group_id)}_{_safe(lbl)}"))
+                # Collected for a single summary grid rather than a
+                # full-width figure each: one curve does not need the page
+                # width, and a grid lets the series be compared at a glance.
+                self.peak_fits.extend(
+                    (lbl, pf) for lbl, pf in pfits if pf.ok and pf.peaks)
             reports.append(gr)
         return reports
 

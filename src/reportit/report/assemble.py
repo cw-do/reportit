@@ -120,6 +120,10 @@ def render(model: ReportModel, mode: str = "comprehensive") -> str:
         catalog_table=model.catalog_table,
         appendix_tables=appendix,
         group_reports=groups,
+        summary_figures=[{"path": str(f.path),
+                          "caption": L.escape_keep_math(f.caption),
+                          "label": f.label, "width": f.width}
+                         for f in (model.summary_figures or [])],
         sas_sections=sas_sections,
         sas_summary=sas_summary,
         sas_appendix=sas_appendix,

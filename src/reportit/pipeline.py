@@ -235,6 +235,34 @@ def run_report(
                     d_intent=d_intent)
     group_reports = runner.run(strategy)
 
+    # 6b) One summary grid of the peak fits across every group. A single-curve
+    # plot does not need the full page width; a 2- or 3-column grid puts the whole
+    # series on one page where the trend in peak position is visible at a glance.
+    summary_figs = []
+    pf = list(getattr(runner, "peak_fits", []) or [])
+    if pf:
+        from .plotting import figures as _fg
+        from .models import FigureRef as _FR
+        page = 12
+        pages = [pf[k:k + page] for k in range(0, len(pf), page)]
+        for pi, chunk in enumerate(pages, 1):
+            suffix = f"_{pi}" if len(pages) > 1 else ""
+            fp = out_dir / "figures" / f"peakfit_summary{suffix}.png"
+            ttl = "Empirical peak fits" + (f" ({pi}/{len(pages)})" if len(pages) > 1 else "")
+            made = _fg.plot_peak_fit_grid(chunk, fp, title=ttl)
+            if made:
+                summary_figs.append(_FR(
+                    path=made,
+                    caption=("Empirical peak fits for every sample: measured points, "
+                             "the correlation-type background (green) and the total "
+                             "fit (red); dotted lines mark the fitted peak positions "
+                             "and each panel is annotated with the resulting repeat "
+                             "distance. Panels reading \"no peak\" had none standing "
+                             "clearly above the noise."),
+                    label=f"fig:peakfit_summary{suffix}", width="\\textwidth"))
+        logger.info("Peak-fit summary: %d curve(s) across %d grid figure(s).",
+                    len(pf), len(summary_figs))
+
     # 7) per-group observations (grounded in the actual plot + experiment context)
     obs_context = strategy.experiment_summary
     if proposal and proposal.science_goals:
@@ -321,6 +349,7 @@ def run_report(
         model_name=(settings.llm.model if llm else "deterministic"),
         reportit_version=__version__,
         namemap=namemap,
+        summary_figures=summary_figs,
     )
 
     # 10) assemble + compile PDFs (both by default; only the summary if requested)

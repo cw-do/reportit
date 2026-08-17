@@ -384,3 +384,4 @@ class ReportModel:
     model_name: str = ""
     reportit_version: str = ""   # which reportit produced this report
     namemap: Any = None          # shortnames.NameMap for display labels
+    summary_figures: list = field(default_factory=list)  # cross-group grids

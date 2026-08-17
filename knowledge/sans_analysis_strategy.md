@@ -397,3 +397,20 @@ question IS a model parameter — and not otherwise.
   and give the measured quantity instead. "The model does not describe the peak"
   plus the measured peak position is a result; the model's parameters alone are
   not.
+
+### 13a. Presenting a series: grid the single-curve plots
+
+A figure that shows ONE curve does not need the full page width. At that size the
+reader gets one sample per figure and has to page back and forth to compare them,
+which is the opposite of what a series report is for.
+
+- Reserve full-width figures for plots that genuinely overlay SEVERAL datasets —
+  a group overlay, a trend across a series.
+- Put per-sample plots (individual fits, peak decompositions) into a **2- or
+  3-column grid**, one panel per sample, on a single page. The comparison the
+  reader actually wants — how the peak position, width or shape moves from sample
+  to sample — then reads at a glance.
+- Annotate each panel with its result (e.g. the repeat distance) so the grid is a
+  summary in itself and not merely a contact sheet.
+- Keep panels legible: at panel size the default log-axis ticks collide into an
+  unreadable smear, so label only a few decades and drop the minor tick labels.

@@ -17,6 +17,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
+from matplotlib.ticker import (  # noqa: E402
+    LogFormatterMathtext, LogLocator, NullFormatter)
 
 from ..analysis.clean import clean_low_q  # noqa: E402
 from ..analysis.loaders import load_iq, load_iqxqy  # noqa: E402
@@ -385,6 +387,81 @@ def plot_peak_fit(fit, out_path: Path, *, title: str = "") -> Path | None:
     axr.grid(True, which="major", alpha=0.2)
 
     fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return out_path
+
+
+def _grid_shape(n: int, ncols: int | None = None) -> tuple[int, int]:
+    """Columns x rows for ``n`` panels. Two columns up to 4 panels, three beyond,
+    so panels stay legible instead of shrinking indefinitely."""
+    if ncols is None:
+        ncols = 2 if n <= 4 else 3
+    ncols = max(1, min(ncols, n))
+    return ncols, int(np.ceil(n / ncols))
+
+
+def plot_peak_fit_grid(items, out_path: Path, *, ncols: int | None = None,
+                       title: str = "") -> Path | None:
+    """Summary grid of multi-peak fits — one compact panel per curve.
+
+    A single-curve plot does not need the full page width: at that size the
+    reader gets one curve per figure and has to page back and forth to compare
+    them. Collecting the fits into a 2- or 3-column grid puts the whole series on
+    one page, where the thing that matters — how the peak position and width move
+    from sample to sample — is visible at a glance.
+
+    Panels drop the residual strip that the per-curve figure carries; the point
+    here is comparison across samples, not scrutiny of one fit.
+    """
+    items = [(lbl, f) for lbl, f in (items or [])
+             if f is not None and getattr(f, "ok", False)]
+    if not items:
+        return None
+    n = len(items)
+    ncols, nrows = _grid_shape(n, ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.6 * ncols, 2.9 * nrows),
+                             squeeze=False)
+    for k, (lbl, f) in enumerate(items):
+        ax = axes[k // ncols][k % ncols]
+        q = np.asarray(f.q, float)
+        yd = np.asarray(f.i_data, float)
+        ym = np.asarray(f.i_model, float)
+        bg = np.asarray(f.background, float)
+        m = (q > 0) & (yd > 0) & np.isfinite(yd) & np.isfinite(ym)
+        if m.sum() < 3:
+            ax.axis("off")
+            continue
+        ax.plot(q[m], yd[m], "o", ms=2.2, fillstyle="none", color="tab:blue")
+        ax.plot(q[m], bg[m], "-", lw=0.9, color="tab:green", alpha=0.8)
+        ax.plot(q[m], ym[m], "-", lw=1.4, color="tab:red")
+        for p in (f.peaks or []):
+            ax.axvline(p.q, color="gray", ls=":", lw=0.7)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        # At panel size matplotlib's default log ticks collide into an unreadable
+        # smear, so label only a few decades and drop the minor labels entirely.
+        for axis in (ax.xaxis, ax.yaxis):
+            axis.set_major_locator(LogLocator(base=10.0, numticks=4))
+            axis.set_minor_formatter(NullFormatter())
+            axis.set_major_formatter(LogFormatterMathtext(base=10.0))
+        ds = ", ".join(f"{p.d / 10:.1f}" for p in (f.peaks or []))
+        sub = f"  d={ds} nm" if ds else "  (no peak)"
+        ax.set_title(f"{lbl}\n{sub}", fontsize=7.5)
+        ax.tick_params(labelsize=6)
+        ax.grid(True, which="major", alpha=0.15)
+    # blank out any unused cells
+    for k in range(n, nrows * ncols):
+        axes[k // ncols][k % ncols].axis("off")
+    # shared axis labels only on the outer edge, to keep panels uncluttered
+    for r in range(nrows):
+        axes[r][0].set_ylabel(r"I(Q) (cm$^{-1}$)", fontsize=7)
+    for c in range(ncols):
+        axes[nrows - 1][c].set_xlabel(r"Q ($\mathrm{\AA}^{-1}$)", fontsize=7)
+    if title:
+        fig.suptitle(title, fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.97 if title else 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

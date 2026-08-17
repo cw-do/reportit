@@ -415,10 +415,11 @@ On IPTS-38773 this resolves a reproducible **second peak at ~13.5 nm** alongside
 the ~19 nm primary in every `leaf1_dark` curve — structure the earlier
 single-peak treatment missed.
 
-Each member also gets a **peak-fit figure** showing the data, the background, every
-individual Gaussian, and the total fit, with each peak annotated by its repeat
-distance and a residual panel underneath — so the decomposition can be checked
-rather than taken on trust.
+The fits are shown as a **Peak Fit Summary** grid — one compact panel per sample
+(2 columns up to 4 curves, 3 beyond), each showing the data, the background, the
+total fit and the fitted peak positions, annotated with its repeat distance. The
+whole series lands on one page, so how the peak moves from sample to sample reads
+at a glance instead of one full-width figure per curve.
 
 **Lamellar systems.** Only the *stack* models report a spacing:
 `lamellar_stack_caille`, `lamellar_hg_stack_caille`, `lamellar_stack_paracrystal`

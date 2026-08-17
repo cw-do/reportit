@@ -45,6 +45,18 @@
 << render_table(catalog_table) >>
 <% endif %>
 
+<% if summary_figures %>
+\section{Peak Fit Summary}
+<% for fig in summary_figures %>
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=<< fig.width >>]{<< fig.path >>}
+  \caption{<< fig.caption >>}
+  \label{<< fig.label >>}
+\end{figure}
+<% endfor %>
+<% endif %>
+
 \section{Results by Sample Group}
 <% for gr in group_reports %>
 \subsection{<< gr.title >>}

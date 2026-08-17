@@ -16,6 +16,19 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.11.1
+
+- **Peak fits are shown as a summary grid, not one full-width figure each.**
+  A single-curve plot does not need the page width; the reader had to page back
+  and forth to compare samples. `figures.plot_peak_fit_grid()` puts one compact
+  panel per curve into a 2-column (<=4 curves) or 3-column grid, each annotated
+  with its repeat distance, under a new "Peak Fit Summary" section. Paginated at
+  12 panels per figure. On IPTS-38773 this replaced 8 full-width figures with 1
+  grid, and the comprehensive report went from 21 pages to 15.
+- Panel log-axis ticks are explicitly thinned (few decades, no minor labels);
+  matplotlib's defaults collide into an unreadable smear at panel size.
+- Knowledge guide section 13a records the presentation rule.
+
 ## 0.11.0
 
 Operator decision after reviewing the IPTS-38773 report: the sasmodels stage was
