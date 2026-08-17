@@ -301,3 +301,53 @@ to no actual peak.
 - **Once the peaks are measured this way, a further single-model fit adds little.**
   Judge any model on whether it reproduces the peak STRUCTURE; if none does, say so
   rather than quoting the parameters of a model that smoothed the structure away.
+
+## 12. Planning the analysis (before any fitting)
+
+Deciding WHAT to analyse and HOW TO GROUP it determines whether a report is
+useful. These rules apply to any experiment.
+
+**Which reduced data to use**
+
+- **Prefer combined / stitched / merged extended-Q profiles** over
+  per-configuration curves whenever they exist. A merged profile joins the
+  detector configurations into one curve spanning the full Q-range; fitting or
+  plotting a single configuration throws away the length scales that the other
+  configuration measured, and both the plots and the fits are markedly worse.
+  Names vary by experiment (`merged_*`, `*_stitched`, `*_combined`) — check what
+  is actually present rather than assuming.
+- If several reduction variants exist (different masks, different reduction
+  runs), pick ONE deliberately and say why. **Never compare a variant that has
+  merged data against one that does not** — the difference you see will be the
+  reduction, not the sample.
+- The 1–2 lowest-Q points are frequently beam-stop or mask artefacts. Exclude
+  them; do not let them drive model choice.
+
+**What counts as science data**
+
+- Exclude calibration standards and instrument references (porasil/porsil, blank,
+  empty cell) from the science groups — they are not samples.
+- Exclude solvent and background measurements (D2O, H2O, buffer, empty banjo)
+  from sample comparisons, while remembering that the incoherent background they
+  define is what makes the high-Q level meaningful.
+
+**Grouping**
+
+- Group by the INDEPENDENT VARIABLE the experiment actually varied: temperature,
+  concentration, salinity, position, treatment. The comparison a reader wants is
+  one curve per condition on a single plot.
+- **Every science sample must appear in some group.** A grouping that covers only
+  part of the measured samples silently hides data; if a proposed grouping leaves
+  most samples out, fall back to a simple deterministic grouping (one bucket per
+  sample stem and condition) rather than reporting a convenient subset.
+- Keep genuinely different things apart: different sample thickness, different
+  cell, or a different reduction are not members of one series.
+- Order series members by their numeric condition (temperature, concentration),
+  not alphabetically, so a trend reads correctly.
+
+**Reporting**
+
+- State what was NOT analysed and why. A caveat that names the missing data is
+  worth more than a report that quietly omits it.
+- Prefer a plain statement of what the data show over a model-derived number the
+  data cannot support (see §8 and §10).

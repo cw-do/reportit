@@ -16,6 +16,19 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.9.1
+
+- **Knowledge guide gains section 12, "Planning the analysis".** An audit found
+  the guide covered the fitting rules completely but carried NOTHING for the
+  strategy stage — which has been receiving it since 0.8.0. Five rules lived only
+  in `strategy/engine.py`'s prompt and in the grouping-guard code: prefer merged
+  extended-Q profiles, never compare a merged variant against a non-merged one,
+  exclude calibration standards and solvent/background runs, group by the
+  independent variable with every science sample covered, and order series
+  numerically. They are now stated generally, so the planning agent is guided by
+  the same editable document as the fitter — and so a scientist can change how
+  reportit plans an analysis without touching Python.
+
 ## 0.9.0
 
 - Knowledge guide gains section 11a, "Count the peaks before choosing a peak
