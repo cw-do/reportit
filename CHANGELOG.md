@@ -16,6 +16,18 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.12.0
+
+- **Proposal PDF auto-downloaded from ONCat (+0.1.0).** When no proposal is given
+  with `--proposal` and none is found on disk, reportit now retrieves the
+  statement of research straight from ONCat for the experiment's IPTS
+  (`oncat.Proposal.retrieve`, the base64 `statement_of_research` field), so
+  `reportit <ipts>` finds the proposal even when the PDF was never staged in the
+  shared folder. Cached under `.reportit_cache/` so a rerun does not re-hit ONCat;
+  `--refresh` re-downloads. Degrades silently to "no proposal" if ONCat is down,
+  the field is empty, or the blob is not a PDF. `--no-proposal` still skips it.
+  Validated on IPTS-38773/38603/37095 (all return valid PDFs).
+
 ## 0.11.3
 
 Documentation sweep after the opt-in and appendix changes.

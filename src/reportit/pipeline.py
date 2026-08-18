@@ -144,6 +144,13 @@ def run_report(
             ctx.degraded.append(f"No PDF found at --proposal path: {proposal_path}")
     else:
         proposal_pdfs = inv.proposal_pdfs  # default auto-discovery (shared/proposal/, etc.)
+        # Nothing on disk? Pull the statement of research straight from ONCat,
+        # so `reportit <ipts>` finds the proposal without the file being staged.
+        if not no_proposal and not proposal_pdfs and inv.ipts:
+            got = oncat.fetch_proposal_pdf_cached(inv.ipts, cache, refresh=refresh)
+            if got:
+                proposal_pdfs = [got]
+                logger.info("Proposal PDF retrieved from ONCat (no local copy found).")
     if not no_proposal and proposal_pdfs:
         logger.info("Reading proposal: %s", ", ".join(p.name for p in proposal_pdfs))
         proposal = summarize.summarize(proposal_pdfs, llm)

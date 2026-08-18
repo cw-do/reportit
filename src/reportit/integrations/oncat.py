@@ -7,6 +7,7 @@ client-credentials flow; no interactive login required. Results cached to disk.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
@@ -113,6 +114,72 @@ def fetch_catalog(ipts: int) -> pd.DataFrame:
         df = df.sort_values("run_number").reset_index(drop=True)
     logger.info("Fetched %d runs for IPTS-%d", len(df), ipts)
     return df
+
+
+def _oncat_client(ipts: int):
+    """A logged-in ONCat client (machine-to-machine, no interactive login)."""
+    try:
+        import pyoncat
+    except ImportError as e:
+        raise ImportError("pyoncat is required for ONCat access.") from e
+    logger.info("Connecting to ONCat for IPTS-%s...", ipts)
+    oncat = pyoncat.ONCat(
+        "https://oncat.ornl.gov",
+        flow=pyoncat.CLIENT_CREDENTIALS_FLOW,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+    )
+    oncat.login()
+    return oncat
+
+
+def fetch_proposal_pdf(ipts: int, dest: Path) -> Optional[Path]:
+    """Download the beamtime proposal (statement of research) PDF from ONCat.
+
+    The PDF lives in the proposal's ``statement_of_research`` field as a base64
+    blob. Writes it to ``dest`` and returns the path, or None if unavailable
+    (field missing, not a PDF, or ONCat down) — never raises, so a run continues
+    without a proposal exactly as it would if none were on disk.
+    """
+    import base64
+
+    try:
+        oncat = _oncat_client(ipts)
+        proposal = oncat.Proposal.retrieve(
+            f"IPTS-{ipts}", projection=["statement_of_research"])
+        blob = getattr(proposal, "statement_of_research", None)
+        if not blob:
+            logger.info("ONCat has no statement_of_research for IPTS-%s.", ipts)
+            return None
+        raw = base64.b64decode(blob)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not fetch proposal PDF from ONCat for IPTS-%s: %s",
+                       ipts, e)
+        return None
+    if raw[:5] != b"%PDF-":
+        logger.warning("ONCat statement_of_research for IPTS-%s is not a PDF "
+                       "(starts with %r); ignoring.", ipts, raw[:8])
+        return None
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(raw)
+    except OSError as e:
+        logger.warning("Could not write proposal PDF to %s: %s", dest, e)
+        return None
+    logger.info("Downloaded proposal PDF from ONCat for IPTS-%s (%d bytes) -> %s",
+                ipts, len(raw), dest)
+    return dest
+
+
+def fetch_proposal_pdf_cached(ipts: int, cache, refresh: bool = False) -> Optional[Path]:
+    """Cached proposal-PDF download. The PDF is stored under the cache directory
+    so a rerun does not re-hit ONCat. Returns the path or None."""
+    cache_dir = getattr(cache, "root", None) or getattr(cache, "path", None)
+    dest = (Path(cache_dir) if cache_dir else Path(".")) / f"proposal_IPTS-{ipts}.pdf"
+    if not refresh and dest.is_file() and dest.stat().st_size > 0:
+        logger.info("Using cached proposal PDF %s", dest)
+        return dest
+    return fetch_proposal_pdf(ipts, dest)
 
 
 def fetch_catalog_cached(ipts: int, cache, refresh: bool = False) -> Optional[pd.DataFrame]:

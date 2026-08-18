@@ -176,7 +176,7 @@ sub-scores), and `notebook.md` (the ranked lab notebook). Options: `--out DIR`,
 | `-o, --out DIR` | output directory (default `./reportit_out`) |
 | `--strategy-only` | print the LLM-derived `AnalysisStrategy` JSON and stop |
 | `--no-llm` | deterministic mode: heuristic grouping, no LLM reasoning |
-| `--proposal PATH` | proposal folder or single PDF to use (default: auto-discover `<shared>/proposal/*.pdf` and any `*.pdf` under `<shared>`) |
+| `--proposal PATH` | proposal folder or single PDF to use (default: auto-discover `<shared>/proposal/*.pdf` and any `*.pdf` under `<shared>`; if none on disk, downloaded from ONCat by IPTS) |
 | `--no-proposal` | ignore the proposal PDF(s) |
 | `--data DIR` | reduced-data folder to analyze (default: auto-discovered — every directory under the target that holds `*_Iq.dat`). Repeatable; may point outside the target; an explicit choice overrides the LLM's variant selection |
 | `--userguide TEXT` | a few sentences in plain English steering the analysis; interpreted once and routed to the steps it affects (alias `--guide`) |
@@ -331,7 +331,7 @@ by a keyword reading, and anything else is passed through as free text.
 
 ## Graceful degradation
 
-A thin/image-only proposal, missing ONCat, or `--no-llm` never hard-fails: the
+A missing proposal (none on disk and none in ONCat), a thin/image-only proposal, missing ONCat, or `--no-llm` never hard-fails: the
 report falls back to a data-driven summary (heuristic grouping, ONCat/ filename
 titles, templated observations) and records what was missing in a Caveats section.
 
