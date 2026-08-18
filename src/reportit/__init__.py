@@ -6,4 +6,4 @@
 # Versioning policy (see CHANGELOG.md):
 #   +0.0.1  small change — bug fix, wording, tuning, config/model swap
 #   +0.1.0  major function addition — a new capability or CLI flag
-__version__ = "0.12.0"
+__version__ = "0.12.1"

@@ -16,6 +16,12 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.12.1
+
+- The ONCat-downloaded proposal PDF is saved in the **output directory**
+  (`<out>/proposal_IPTS-N.pdf`), next to the report, instead of in the hidden
+  `.reportit_cache/`. A rerun reuses it in place; `--refresh` re-downloads.
+
 ## 0.12.0
 
 - **Proposal PDF auto-downloaded from ONCat (+0.1.0).** When no proposal is given

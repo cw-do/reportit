@@ -171,13 +171,14 @@ def fetch_proposal_pdf(ipts: int, dest: Path) -> Optional[Path]:
     return dest
 
 
-def fetch_proposal_pdf_cached(ipts: int, cache, refresh: bool = False) -> Optional[Path]:
-    """Cached proposal-PDF download. The PDF is stored under the cache directory
-    so a rerun does not re-hit ONCat. Returns the path or None."""
-    cache_dir = getattr(cache, "root", None) or getattr(cache, "path", None)
-    dest = (Path(cache_dir) if cache_dir else Path(".")) / f"proposal_IPTS-{ipts}.pdf"
+def fetch_proposal_pdf_cached(ipts: int, dest_dir: Path,
+                              refresh: bool = False) -> Optional[Path]:
+    """Download the proposal PDF into ``dest_dir`` (kept alongside the report, not
+    hidden in the cache). If it is already there, reuse it instead of re-hitting
+    ONCat; ``refresh`` forces a re-download. Returns the path or None."""
+    dest = Path(dest_dir) / f"proposal_IPTS-{ipts}.pdf"
     if not refresh and dest.is_file() and dest.stat().st_size > 0:
-        logger.info("Using cached proposal PDF %s", dest)
+        logger.info("Using previously downloaded proposal PDF %s", dest)
         return dest
     return fetch_proposal_pdf(ipts, dest)
 
