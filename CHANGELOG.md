@@ -16,6 +16,24 @@ on every report's title page and page footer, at the top of
 
 ---
 
+## 0.12.2
+
+Robustness for the ONCat-only proposal path (a run on IPTS-38773 silently skipped
+the repeat-distance peak analysis because the proposal — now downloaded from
+ONCat, the local PDF having been deleted — was momentarily unavailable).
+
+- **A missing proposal is now stated loudly.** When no proposal can be read
+  (none on disk and the ONCat download failed), the report carries a prominent
+  caveat that proposal-driven analyses — repeat-distance / d-spacing peak
+  detection and any model-based fitting — were SKIPPED, and that this is not a
+  "no peaks found" result. Previously the analysis just vanished with no notice.
+- **Last-good proposal is cached.** Every successful ONCat download is copied to
+  a stable per-user backup (`~/.reportit/proposals/`); if a later download fails,
+  that backup is reused instead of falling back to nothing. So a transient ONCat
+  outage no longer drops the proposal and every analysis that depends on it.
+- The caveat does not fire when the proposal is available or under
+  `--no-proposal`; the backup is validated as a real PDF before reuse.
+
 ## 0.12.1
 
 - The ONCat-downloaded proposal PDF is saved in the **output directory**

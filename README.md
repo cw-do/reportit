@@ -333,7 +333,12 @@ by a keyword reading, and anything else is passed through as free text.
 
 A missing proposal (none on disk and none in ONCat), a thin/image-only proposal, missing ONCat, or `--no-llm` never hard-fails: the
 report falls back to a data-driven summary (heuristic grouping, ONCat/ filename
-titles, templated observations) and records what was missing in a Caveats section.
+titles, templated observations) and records what was missing in a Caveats
+section. In particular, if the proposal cannot be read (none on disk and the
+ONCat download failed) the report says so **prominently** — proposal-driven
+analyses like repeat-distance peak detection are skipped, and that is flagged
+as *not* a null result. Every successful ONCat proposal download is also kept
+in `~/.reportit/proposals/` so a later ONCat outage reuses the last good copy.
 
 ## Teaching reportit (it gets smarter as you add knowledge)
 

@@ -160,6 +160,25 @@ def run_report(
         ctx.degraded.append("No proposal document found.")
     ctx.proposal = proposal
 
+    # A proposal-driven analysis (repeat-distance peak detection, model selection)
+    # can only run if the proposal was actually read. When it was not — none on
+    # disk and the ONCat download failed — those analyses are silently disabled,
+    # and an empty report reads like "nothing found" rather than "not analysed".
+    # Say so loudly, so a missing proposal is never mistaken for a null result.
+    if not no_proposal and not (proposal and proposal.available):
+        reason = ("ONCat was unreachable and no proposal PDF was on disk"
+                  if inv.ipts else "no proposal PDF was found")
+        ctx.degraded.append(
+            "PROPOSAL UNAVAILABLE (" + reason + "). Proposal-driven analyses were "
+            "therefore SKIPPED — including repeat-distance / d-spacing peak "
+            "detection and any model-based fitting the proposal would have "
+            "requested. This is NOT a 'no peaks found' result: the analysis did "
+            "not run. Re-run with --refresh once ONCat is reachable, or pass the "
+            "proposal explicitly with --proposal PATH.")
+        logger.warning("Proposal unavailable — repeat-distance and model-based "
+                       "analyses will be skipped. Re-run with --refresh or "
+                       "--proposal once available.")
+
     # 4b) is this experiment about a periodic repeat distance? If the proposal
     # says so, the report should answer that question directly: find the
     # correlation peak and convert it to d = 2*pi/Q_peak.

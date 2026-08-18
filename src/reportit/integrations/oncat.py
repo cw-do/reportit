@@ -171,16 +171,61 @@ def fetch_proposal_pdf(ipts: int, dest: Path) -> Optional[Path]:
     return dest
 
 
+def _proposal_backup_path(ipts: int) -> Path:
+    """A stable, per-user location where the last good proposal download is kept,
+    so a later ONCat outage can reuse it instead of falling back to nothing."""
+    return Path.home() / ".reportit" / "proposals" / f"proposal_IPTS-{ipts}.pdf"
+
+
+def _is_pdf(p: Path) -> bool:
+    try:
+        with open(p, "rb") as fh:
+            return fh.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
 def fetch_proposal_pdf_cached(ipts: int, dest_dir: Path,
                               refresh: bool = False) -> Optional[Path]:
-    """Download the proposal PDF into ``dest_dir`` (kept alongside the report, not
-    hidden in the cache). If it is already there, reuse it instead of re-hitting
-    ONCat; ``refresh`` forces a re-download. Returns the path or None."""
+    """Get the proposal PDF into ``dest_dir`` (kept alongside the report, not
+    hidden in the cache), returning its path or None.
+
+    Robust against a flaky ONCat: every successful download is also copied to a
+    stable per-user backup (``~/.reportit/proposals/``), and if a later download
+    fails that backup is reused. So a transient ONCat outage no longer silently
+    drops the proposal — and with it every proposal-driven analysis. ``refresh``
+    forces a fresh download but still falls back to the backup if that fails.
+    """
+    import shutil
+
     dest = Path(dest_dir) / f"proposal_IPTS-{ipts}.pdf"
-    if not refresh and dest.is_file() and dest.stat().st_size > 0:
+    backup = _proposal_backup_path(ipts)
+
+    # already downloaded next to the report — reuse unless --refresh
+    if not refresh and dest.is_file() and dest.stat().st_size > 0 and _is_pdf(dest):
         logger.info("Using previously downloaded proposal PDF %s", dest)
         return dest
-    return fetch_proposal_pdf(ipts, dest)
+
+    got = fetch_proposal_pdf(ipts, dest)
+    if got is not None:
+        try:  # keep a stable backup for next time ONCat is down
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(got, backup)
+        except OSError as e:
+            logger.debug("Could not update proposal backup %s: %s", backup, e)
+        return got
+
+    # download failed — fall back to the last good copy if we have one
+    if backup.is_file() and backup.stat().st_size > 0 and _is_pdf(backup):
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup, dest)
+            logger.warning("ONCat proposal download failed for IPTS-%s; reusing the "
+                           "last good copy from %s.", ipts, backup)
+            return dest
+        except OSError as e:
+            logger.warning("Could not restore proposal backup %s: %s", backup, e)
+    return None
 
 
 def fetch_catalog_cached(ipts: int, cache, refresh: bool = False) -> Optional[pd.DataFrame]:
